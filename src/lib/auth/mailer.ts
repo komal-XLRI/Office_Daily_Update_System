@@ -1,5 +1,8 @@
 import "server-only";
 
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { createTransport, type Transporter } from "nodemailer";
 
 import { OTP_TTL_SECONDS } from "@/lib/auth/constants";
@@ -64,7 +67,26 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function buildOtpEmail({ name, otp }: OtpEmailMessage) {
+/** Inline logo attachment: email clients cannot read local files, so it travels with the message. */
+const LOGO_CID = "xlri-logo";
+/** Retina-sized copy of the logo (264px wide) so every OTP email stays small. */
+const LOGO_PATH = path.join(process.cwd(), "public", "xlri-logo-email.png");
+
+let cachedLogo: Buffer | null | undefined;
+
+/** Reads the logo once. Returns null (plain-text header) if it is missing or unreadable. */
+async function readLogo(): Promise<Buffer | null> {
+  if (cachedLogo === undefined) {
+    try {
+      cachedLogo = await readFile(LOGO_PATH);
+    } catch {
+      cachedLogo = null;
+    }
+  }
+  return cachedLogo;
+}
+
+function buildOtpEmail({ name, otp }: OtpEmailMessage, withLogo: boolean) {
   const minutes = Math.round(OTP_TTL_SECONDS / 60);
   const expiry = `${minutes} minute${minutes === 1 ? "" : "s"}`;
   const greetingName = name.trim() || "there";
@@ -81,18 +103,57 @@ function buildOtpEmail({ name, otp }: OtpEmailMessage) {
     APP_NAME,
   ].join("\n");
 
+  // Table-based layout with inline styles: the only markup email clients render consistently.
+  const header = withLogo
+    ? `<img src="cid:${LOGO_CID}" width="132" height="57" alt="XLRI" style="display:block;border:0;outline:none;width:132px;height:57px;" />`
+    : `<span style="font-size:18px;font-weight:bold;color:#18181b;">XLRI</span>`;
+
   const html = `<!doctype html>
 <html lang="en">
-  <body style="margin:0;padding:24px;background-color:#f4f4f5;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:480px;margin:0 auto;background-color:#ffffff;border:1px solid #e4e4e7;border-radius:8px;">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>${escapeHtml(subject)}</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#f4f4f5;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your sign-in code expires in ${expiry}.</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f4f4f5;">
       <tr>
-        <td style="padding:24px;">
-          <p style="margin:0 0 16px;font-size:14px;color:#52525b;">${escapeHtml(APP_NAME)}</p>
-          <p style="margin:0 0 16px;font-size:16px;">Hello ${escapeHtml(greetingName)},</p>
-          <p style="margin:0 0 12px;font-size:16px;">Your sign-in code is:</p>
-          <p style="margin:0 0 16px;font-size:32px;font-weight:bold;letter-spacing:8px;font-family:'Courier New',Courier,monospace;">${escapeHtml(otp)}</p>
-          <p style="margin:0 0 16px;font-size:14px;">It expires in ${expiry}.</p>
-          <p style="margin:0;font-size:13px;color:#71717a;">If you did not request this code, you can ignore this email.</p>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:520px;background-color:#ffffff;border:1px solid #e4e4e7;border-radius:10px;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #e4e4e7;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td style="vertical-align:middle;padding-right:14px;">${header}</td>
+                    <td style="vertical-align:middle;border-left:1px solid #e4e4e7;padding-left:14px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#52525b;">
+                      ${escapeHtml(APP_NAME)}
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
+                <p style="margin:0 0 8px;font-size:16px;line-height:24px;">Hello ${escapeHtml(greetingName)},</p>
+                <p style="margin:0 0 24px;font-size:14px;line-height:22px;color:#52525b;">Use the code below to sign in. Do not share it with anyone.</p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f4f4f5;border:1px solid #e4e4e7;border-radius:8px;">
+                  <tr>
+                    <td align="center" style="padding:20px 16px;">
+                      <div style="font-family:'Courier New',Courier,monospace;font-size:34px;font-weight:bold;letter-spacing:10px;line-height:40px;color:#18181b;">${escapeHtml(otp)}</div>
+                      <div style="margin-top:8px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#71717a;">Expires in ${expiry}</div>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:24px 0 0;font-size:13px;line-height:20px;color:#71717a;">If you did not request this code, you can safely ignore this email.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 32px;border-top:1px solid #e4e4e7;background-color:#fafafa;border-radius:0 0 10px 10px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#71717a;">
+                This is an automated message from ${escapeHtml(APP_NAME)}. Please do not reply.
+              </td>
+            </tr>
+          </table>
         </td>
       </tr>
     </table>
@@ -122,12 +183,16 @@ export async function sendOtpEmail(message: OtpEmailMessage): Promise<void> {
     return;
   }
 
-  const { subject, text, html } = buildOtpEmail(message);
+  const logo = await readLogo();
+  const { subject, text, html } = buildOtpEmail(message, logo !== null);
   await getTransport(config).sendMail({
     from: config.from,
     to: { name: message.name, address: message.to },
     subject,
     text,
     html,
+    attachments: logo
+      ? [{ filename: "xlri-logo.png", content: logo, cid: LOGO_CID, contentDisposition: "inline" }]
+      : undefined,
   });
 }
