@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local env example is safe to commit
+!.env.example
+
+# local seed data with real staff emails
+/scripts/seed-data/staff.json
+
+# throwaway verification scripts
+/.scratch/

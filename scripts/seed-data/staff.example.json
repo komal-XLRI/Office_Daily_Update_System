@@ -1,0 +1,77 @@
+{
+  "_comment": "Copy to staff.json (gitignored), replace the placeholder emails with real registered addresses, then set isActive to true only for people who should sign in. Roles are always \"user\"; no passwords are used (email OTP). Existing emails are never modified by the seed.",
+  "users": [
+    {
+      "name": "Fr Antony R Uvari, SJ",
+      "email": "tony@xlri.ac.in",
+      "designation": "Director",
+      "officeCode": "DIRECTOR",
+      "isActive": true
+    },
+    {
+      "name": "EA to the Director Office",
+      "email": "directoroffice.delhi@xlri.ac.in",
+      "designation": "Assistant",
+      "officeCode": "DIRECTOR",
+      "isActive": true
+    },
+
+    {
+      "name": "Fr. Alwyn Rodrigues, SJ",
+      "email": "alwynsj@xlri.ac.in",
+      "designation": "Dean Admin & Finance",
+      "officeCode": "DEAN-ADMIN",
+      "isActive": true
+    },
+    {
+      "name": "Fr. Jaganathan Dayal",
+      "email": "dayalsj@xlri.ac.in",
+      "designation": "Administrator",
+      "officeCode": "DEAN-ADMIN",
+      "isActive": true
+    },
+    {
+      "name": "Divya Sarkar ",
+      "email": "deanadmin_delhioffice@xlri.ac.in",
+      "designation": "Executive Assistant to the Dean (A&F)",
+      "officeCode": "DEAN-ADMIN",
+      "isActive": true
+    },
+    {
+      "name": "Ashwani Kumar",
+      "email": "admin.officer@xlri.ac.in",
+      "designation": "Administrative Officer",
+      "officeCode": "DEAN-ADMIN",
+      "isActive": true
+    },
+
+    {
+      "name": "Dr. Munish Kumar Thakur",
+      "email": "munish@xlri.ac.in>",
+      "designation": "Dean (Academics)",
+      "officeCode": "DEAN-ACA",
+      "isActive": true
+    },
+    {
+      "name": "Rahul Sarkar",
+      "email": "deanoffice.delhi@xlri.ac.in>",
+      "designation": "Academic Administrative Officer",
+      "officeCode": "DEAN-ACA",
+      "isActive": true
+    },
+    {
+      "name": "Ambika Moonka",
+      "email": "deanoffice.delhi@xlri.ac.in",
+      "designation": "Academic Administrative Officer",
+      "officeCode": "DEAN-ACA",
+      "isActive": false
+    },
+    {
+      "name": "Abhijeet Singh",
+      "email": "abhijeet@example.invalid",
+      "designation": "Administrative Assistant",
+      "officeCode": "DEAN-ACA",
+      "isActive": true
+    }
+  ]
+}
