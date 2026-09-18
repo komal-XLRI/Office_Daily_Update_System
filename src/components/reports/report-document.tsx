@@ -147,8 +147,12 @@ function DailyUpdates({
           {records.map((record) => (
             <li key={record.id} className="space-y-1 break-inside-avoid">
               <RecordDate date={record.date} />
-              <p className="font-semibold wrap-break-word">{record.dailyUpdate.title}</p>
-              <p className="wrap-break-word whitespace-pre-wrap">{record.dailyUpdate.description}</p>
+              {record.dailyUpdates.map((update, index) => (
+                <div key={`${index}-${update.title}`}>
+                  <p className="font-semibold wrap-break-word">{update.title}</p>
+                  <p className="wrap-break-word whitespace-pre-wrap">{update.description}</p>
+                </div>
+              ))}
             </li>
           ))}
         </ol>
@@ -255,16 +259,32 @@ interface AttachmentGroup {
   documents: Attachment[];
 }
 
+/** One group per thing files were attached to, so it is clear which update or milestone each belongs to. */
 function attachmentGroups(records: ReportDailyRecord[], visitors: ReportVisitor[]): AttachmentGroup[] {
   const groups: AttachmentGroup[] = [];
+  const add = (key: string, label: string, photos: Attachment[], documents: Attachment[]) => {
+    if (photos.length === 0 && documents.length === 0) return;
+    groups.push({ key, label, photos, documents });
+  };
   for (const record of records) {
-    if (record.photos.length === 0 && record.documents.length === 0) continue;
-    groups.push({
-      key: `record-${record.id}`,
-      label: `Daily update · ${formatBusinessDate(record.date)}`,
-      photos: record.photos,
-      documents: record.documents,
+    const date = formatBusinessDate(record.date);
+    record.dailyUpdates.forEach((update, index) => {
+      add(
+        `record-${record.id}-update-${index}`,
+        `Daily update · ${date} · ${update.title}`,
+        update.photos,
+        update.documents,
+      );
     });
+    record.milestones.forEach((milestone, index) => {
+      add(
+        `record-${record.id}-milestone-${index}`,
+        `Milestone ${index + 1} · ${date} · ${milestone.title}`,
+        milestone.photos,
+        milestone.documents,
+      );
+    });
+    add(`record-${record.id}`, `Daily record · ${date}`, record.photos, record.documents);
   }
   for (const visitor of visitors) {
     if (visitor.photos.length === 0 && visitor.documents.length === 0) continue;

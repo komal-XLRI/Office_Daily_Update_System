@@ -33,7 +33,7 @@ async function daily(officeId: IdLike, date: string, milestones = 0, files: { ph
   return createDailyMilestone({
     officeId,
     date,
-    dailyUpdate: { title: `Update ${date}`, description: `Work done on ${date}` },
+    dailyUpdates: [{ title: `Update ${date}`, description: `Work done on ${date}` }],
     milestones: Array.from({ length: milestones }, (_, index) => ({
       title: `Milestone ${index + 1}`,
       description: "Details",
@@ -413,9 +413,16 @@ describe("generateReport: output shape", () => {
 
     const officeA = sectionFor(report, "OFFICE-A");
     const record = officeA?.dailyRecords.find((item) => item.date === "2026-09-10");
-    expect(Object.keys(record ?? {}).sort()).toEqual(["dailyUpdate", "date", "documents", "id", "milestones", "photos"]);
+    expect(Object.keys(record ?? {}).sort()).toEqual([
+      "dailyUpdates",
+      "date",
+      "documents",
+      "id",
+      "milestones",
+      "photos",
+    ]);
     expect(record).toMatchObject({
-      dailyUpdate: { title: "Update 2026-09-10", description: "Work done on 2026-09-10" },
+      dailyUpdates: [{ title: "Update 2026-09-10", description: "Work done on 2026-09-10" }],
       milestones: [
         { title: "Milestone 1", description: "Details", remarks: "On track" },
         { title: "Milestone 2", description: "Details", remarks: "" },

@@ -1,4 +1,11 @@
-import type { Attachment, Importance, MilestoneDTO, OfficeRef, ReportType } from "@/types";
+import type {
+  Attachment,
+  DailyUpdateDTO,
+  Importance,
+  MilestoneDTO,
+  OfficeRef,
+  ReportType,
+} from "@/types";
 
 /**
  * Dynamically generated report (spec §17–§20). Nothing here is persisted — there is no reports collection.
@@ -38,7 +45,8 @@ export interface ReportDailyRecord {
   id: string;
   /** Business date "YYYY-MM-DD". */
   date: string;
-  dailyUpdate: { title: string; description: string };
+  /** One or more updates written for the day, in the order they were entered. */
+  dailyUpdates: DailyUpdateDTO[];
   milestones: MilestoneDTO[];
   photos: Attachment[];
   documents: Attachment[];

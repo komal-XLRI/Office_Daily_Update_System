@@ -2,6 +2,7 @@ import { PlusIcon, UserCheckIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { DailyUpdatesViewTabs } from "@/components/daily-updates/view-tabs";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { PaginationNav } from "@/components/shared/pagination-nav";
@@ -79,7 +80,9 @@ export default async function VisitorsPage({ searchParams }: { searchParams: Pro
       <PageHeader
         title="Visitors"
         description={
-          admin ? "Visitor records across all offices." : `Visitor records for ${user.officeName ?? "your office"}.`
+          admin
+            ? "Visitor records across all offices."
+            : `Visitor records for ${user.officeName ?? "your office"}.`
         }
         actions={
           <Button asChild>
@@ -89,6 +92,11 @@ export default async function VisitorsPage({ searchParams }: { searchParams: Pro
             </Link>
           </Button>
         }
+      />
+
+      <DailyUpdatesViewTabs
+        view="visitors"
+        filters={{ date: query.date, from: query.from, to: query.to, officeId: officeFilter, q: query.q }}
       />
 
       <VisitorFilters key={JSON.stringify(filterValues)} values={filterValues} offices={admin ? offices : undefined} />

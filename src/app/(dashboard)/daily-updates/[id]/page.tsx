@@ -14,11 +14,22 @@ import { getDailyMilestone } from "@/lib/services/daily-milestones";
 import { formatBusinessDate, formatDateTime } from "@/lib/utils/dates";
 import { buildHref } from "@/lib/utils/search-params";
 import { pluralize } from "@/lib/utils/strings";
-import type { DailyMilestoneDTO } from "@/types";
+import type { Attachment, DailyMilestoneDTO } from "@/types";
 
 export const metadata: Metadata = {
   title: "Daily Record",
 };
+
+/** Files attached to one daily update or one milestone. Renders nothing when there are none. */
+function ItemAttachments({ photos, documents }: { photos: Attachment[]; documents: Attachment[] }) {
+  if (photos.length === 0 && documents.length === 0) return null;
+  return (
+    <div className="space-y-3 pt-1">
+      {photos.length > 0 ? <PhotoGallery photos={photos} /> : null}
+      {documents.length > 0 ? <DocumentList documents={documents} /> : null}
+    </div>
+  );
+}
 
 export default async function DailyRecordPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePageUser();
@@ -97,13 +108,23 @@ export default async function DailyRecordPage({ params }: { params: Promise<{ id
 
       <Card>
         <CardHeader>
-          <CardTitle>
-            <h2>Daily update</h2>
+          <CardTitle className="flex items-center gap-2">
+            <h2>{record.dailyUpdates.length === 1 ? "Daily update" : "Daily updates"}</h2>
+            {record.dailyUpdates.length > 1 ? (
+              <Badge variant="secondary" className="tabular-nums">
+                {record.dailyUpdates.length}
+              </Badge>
+            ) : null}
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <h3 className="text-lg font-semibold break-words">{record.dailyUpdate.title}</h3>
-          <p className="leading-relaxed break-words whitespace-pre-wrap">{record.dailyUpdate.description}</p>
+        <CardContent className="space-y-6">
+          {record.dailyUpdates.map((update, index) => (
+            <div key={`${index}-${update.title}`} className="space-y-2">
+              <h3 className="text-lg font-semibold break-words">{update.title}</h3>
+              <p className="leading-relaxed break-words whitespace-pre-wrap">{update.description}</p>
+              <ItemAttachments photos={update.photos} documents={update.documents} />
+            </div>
+          ))}
         </CardContent>
       </Card>
 
@@ -149,6 +170,7 @@ export default async function DailyRecordPage({ params }: { params: Promise<{ id
                         {milestone.remarks}
                       </p>
                     ) : null}
+                    <ItemAttachments photos={milestone.photos} documents={milestone.documents} />
                   </div>
                 </li>
               ))}
@@ -161,7 +183,7 @@ export default async function DailyRecordPage({ params }: { params: Promise<{ id
         <Card>
           <CardHeader>
             <CardTitle>
-              <h2>Photos</h2>
+              <h2>Other photos for this day</h2>
             </CardTitle>
             <CardDescription>{pluralize(record.photos.length, "photo")}</CardDescription>
           </CardHeader>
@@ -172,7 +194,7 @@ export default async function DailyRecordPage({ params }: { params: Promise<{ id
         <Card>
           <CardHeader>
             <CardTitle>
-              <h2>Documents</h2>
+              <h2>Other documents for this day</h2>
             </CardTitle>
             <CardDescription>{pluralize(record.documents.length, "document")}</CardDescription>
           </CardHeader>

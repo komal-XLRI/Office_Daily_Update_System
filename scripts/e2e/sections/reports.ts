@@ -135,7 +135,7 @@ export async function runReportsSection(ctx: E2EContext): Promise<void> {
   await h.check("daily report content: Office A section has the revised record, 3 milestones and 3 visitors", async () => {
     const report = await getReport(admin, { type: "daily", date: "2026-09-08", officeId: A.id });
     const section = report.sections[0];
-    assert(section?.dailyRecords[0]?.dailyUpdate.title.includes(seed.keywords.a), `record title ${section?.dailyRecords[0]?.dailyUpdate.title}`);
+    assert(section?.dailyRecords[0]?.dailyUpdates[0]?.title.includes(seed.keywords.a), `record title ${section?.dailyRecords[0]?.dailyUpdates[0]?.title}`);
     assert(section.dailyRecords[0].milestones.length === 3, `milestones ${section.dailyRecords[0].milestones.length}`);
     const visitorNames = section.visitors.map((visitor) => visitor.name);
     assert(sameMembers(visitorNames, ["Ravi Kumar", "Anita Sharma", "Sita Devi"]), `visitors ${visitorNames.join()}`);

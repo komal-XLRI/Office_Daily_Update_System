@@ -6,6 +6,10 @@ import type { Attachment } from "@/types";
 import {
   REPORT_EMPTY_MESSAGES,
   REPORT_IMPORTANCE_LABELS,
+  dailyUpdateBodyCell,
+  dailyUpdateTitleCell,
+  recordDocuments,
+  recordPhotos,
   isLinkableUrl,
   neutralizeFormula,
   noDailyUpdatesMessage,
@@ -140,15 +144,15 @@ function buildDailySheets(workbook: ExcelJS.Workbook, data: ReportData): void {
     const office = text(section.office.name);
     for (const record of section.dailyRecords) {
       const date = businessDateToUtc(record.date);
-      const title = text(record.dailyUpdate.title);
+      const title = text(dailyUpdateTitleCell(record.dailyUpdates));
       addDataRow(daily, [
         office,
         date,
         title,
-        text(record.dailyUpdate.description),
+        text(dailyUpdateBodyCell(record.dailyUpdates)),
         record.milestones.length,
-        fileNames(record.photos),
-        fileNames(record.documents),
+        fileNames(recordPhotos(record)),
+        fileNames(recordDocuments(record)),
       ]);
       dailyCount += 1;
       record.milestones.forEach((milestone, index) => {
@@ -239,8 +243,18 @@ function buildAttachmentSheet(workbook: ExcelJS.Workbook, data: ReportData): voi
   for (const section of data.sections) {
     const office = text(section.office.name);
     for (const record of section.dailyRecords) {
-      addFiles(office, record.date, "Daily Update", record.dailyUpdate.title, "Photo", record.photos);
-      addFiles(office, record.date, "Daily Update", record.dailyUpdate.title, "Document", record.documents);
+      // Files are listed against whatever they were attached to: the day, an update or a milestone.
+      const fileTitle = dailyUpdateTitleCell(record.dailyUpdates);
+      addFiles(office, record.date, "Daily Record", fileTitle, "Photo", record.photos);
+      addFiles(office, record.date, "Daily Record", fileTitle, "Document", record.documents);
+      for (const update of record.dailyUpdates) {
+        addFiles(office, record.date, "Daily Update", update.title, "Photo", update.photos);
+        addFiles(office, record.date, "Daily Update", update.title, "Document", update.documents);
+      }
+      for (const milestone of record.milestones) {
+        addFiles(office, record.date, "Milestone", milestone.title, "Photo", milestone.photos);
+        addFiles(office, record.date, "Milestone", milestone.title, "Document", milestone.documents);
+      }
     }
     for (const visitor of section.visitors) {
       addFiles(office, visitor.date, "Visitor", visitor.name, "Photo", visitor.photos);

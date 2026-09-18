@@ -2,6 +2,7 @@ import { utcToBusinessDate } from "@/lib/utils/dates";
 import type {
   Attachment,
   DailyMilestoneDTO,
+  DailyUpdateDTO,
   Importance,
   MilestoneDTO,
   OfficeDTO,
@@ -144,6 +145,8 @@ export interface LeanDailyMilestone {
   _id: Stringable;
   officeId: unknown;
   date: Date;
+  dailyUpdates?: unknown;
+  /** Records written before daily updates became a list. Read only; never written. */
   dailyUpdate?: { title?: string | null; description?: string | null } | null;
   milestones?: unknown;
   photos?: unknown;
@@ -153,12 +156,44 @@ export interface LeanDailyMilestone {
   updatedAt: Date;
 }
 
+/**
+ * A record always has at least one daily update. Records created before the field became a list still
+ * hold a single `dailyUpdate` object, so those are read as a one-item list.
+ */
+export function serializeDailyUpdates(doc: {
+  dailyUpdates?: unknown;
+  dailyUpdate?: { title?: string | null; description?: string | null } | null;
+}): DailyUpdateDTO[] {
+  const list = Array.isArray(doc.dailyUpdates)
+    ? doc.dailyUpdates.filter(isRecord).map((item) => ({
+        title: String(item.title ?? ""),
+        description: String(item.description ?? ""),
+        photos: serializeAttachments(item.photos),
+        documents: serializeAttachments(item.documents),
+      }))
+    : [];
+  if (list.length > 0) return list;
+  if (doc.dailyUpdate) {
+    return [
+      {
+        title: doc.dailyUpdate.title ?? "",
+        description: doc.dailyUpdate.description ?? "",
+        photos: [],
+        documents: [],
+      },
+    ];
+  }
+  return [];
+}
+
 export function serializeMilestones(value: unknown): MilestoneDTO[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isRecord).map((item) => ({
     title: String(item.title ?? ""),
     description: String(item.description ?? ""),
     remarks: String(item.remarks ?? ""),
+    photos: serializeAttachments(item.photos),
+    documents: serializeAttachments(item.documents),
   }));
 }
 
@@ -168,10 +203,7 @@ export function serializeDailyMilestone(doc: LeanDailyMilestone): DailyMilestone
     officeId: idOf(doc.officeId),
     office: serializeOfficeRef(doc.officeId),
     date: utcToBusinessDate(doc.date),
-    dailyUpdate: {
-      title: doc.dailyUpdate?.title ?? "",
-      description: doc.dailyUpdate?.description ?? "",
-    },
+    dailyUpdates: serializeDailyUpdates(doc),
     milestones: serializeMilestones(doc.milestones),
     photos: serializeAttachments(doc.photos),
     documents: serializeAttachments(doc.documents),

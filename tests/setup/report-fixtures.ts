@@ -7,6 +7,7 @@ import type {
   ReportVisitor,
 } from "@/lib/reports/types";
 import { combineDateAndTime } from "@/lib/utils/dates";
+import type { Attachment, MilestoneDTO } from "@/types";
 
 /**
  * Report helpers shared by the export and route suites: a realistic in-memory ReportData (spec §19) with
@@ -22,15 +23,36 @@ export const LONG_TEXT =
   "The committee reviewed the admissions pipeline, faculty recruitment status and the campus infrastructure plan. " +
   "Action items were assigned to each department head with clear timelines. ";
 
-function dailyRecord(id: string, date: string, extra: Partial<ReportDailyRecord> = {}): ReportDailyRecord {
+/** Fixture input: nested `photos` / `documents` may be omitted and default to empty lists. */
+type PartialFiles<T extends { photos: Attachment[]; documents: Attachment[] }> = Omit<
+  T,
+  "photos" | "documents"
+> &
+  Partial<Pick<T, "photos" | "documents">>;
+
+interface DailyRecordFixture extends Partial<Omit<ReportDailyRecord, "dailyUpdates" | "milestones">> {
+  dailyUpdates?: PartialFiles<ReportDailyRecord["dailyUpdates"][number]>[];
+  milestones?: PartialFiles<MilestoneDTO>[];
+}
+
+const withFiles = <T extends { photos?: Attachment[]; documents?: Attachment[] }>(item: T) => ({
+  ...item,
+  photos: item.photos ?? [],
+  documents: item.documents ?? [],
+});
+
+function dailyRecord(id: string, date: string, extra: DailyRecordFixture = {}): ReportDailyRecord {
+  const { dailyUpdates, milestones, ...rest } = extra;
   return {
     id,
     date,
-    dailyUpdate: { title: `Coordination meeting ${date}`, description: "Routine coordination." },
-    milestones: [],
     photos: [],
     documents: [],
-    ...extra,
+    ...rest,
+    dailyUpdates: (
+      dailyUpdates ?? [{ title: `Coordination meeting ${date}`, description: "Routine coordination." }]
+    ).map(withFiles),
+    milestones: (milestones ?? []).map(withFiles),
   };
 }
 
@@ -90,7 +112,7 @@ export function buildSampleReport(): ReportData {
     { id: "64f000000000000000000001", name: "Dean (Administration)", code: "DEAN-ADMIN" },
     [
       dailyRecord("d1", "2026-09-07", {
-        dailyUpdate: { title: "Admissions review", description: "Reviewed, approved and \"signed\" the brochure." },
+        dailyUpdates: [{ title: "Admissions review", description: "Reviewed, approved and \"signed\" the brochure." }],
         milestones: [
           { title: "Brochure finalised", description: "Final proof approved by the Dean.", remarks: "Print order placed" },
           {
@@ -106,10 +128,10 @@ export function buildSampleReport(): ReportData {
         ],
       }),
       dailyRecord("d2", "2026-09-08", {
-        dailyUpdate: {
+        dailyUpdates: [{
           title: "Unicode: é ü “smart quotes” – dashes — ₹ 5,000 日本 😀 مرحبا",
           description: `${LONG_TEXT}\r\n\r\n${LONG_TEXT.repeat(6)}`,
-        },
+        }],
         milestones: Array.from({ length: 4 }, (_, index) => ({
           title: `Milestone ${index + 1}: infrastructure work package`,
           description: index % 2 === 0 ? LONG_TEXT : "",
@@ -121,7 +143,7 @@ export function buildSampleReport(): ReportData {
         })),
       }),
       dailyRecord("d3", "2026-09-10", {
-        dailyUpdate: { title: "-Negative start", description: "\t=1+1 tab-prefixed formula" },
+        dailyUpdates: [{ title: "-Negative start", description: "\t=1+1 tab-prefixed formula" }],
       }),
     ],
     [

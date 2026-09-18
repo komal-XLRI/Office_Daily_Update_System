@@ -92,7 +92,7 @@ async function expectZodIssue(promise: Promise<unknown>, path: string): Promise<
 function recordInput(overrides: Record<string, unknown> = {}) {
   return {
     date: "2026-09-08",
-    dailyUpdate: { title: "Admissions review", description: "Reviewed pending applications." },
+    dailyUpdates: [{ title: "Admissions review", description: "Reviewed pending applications." }],
     milestones: [{ title: "Shortlist published", description: "", remarks: "" }],
     photos: [],
     documents: [],
@@ -111,6 +111,56 @@ async function editInput(id: string, overrides: Record<string, unknown> = {}) {
 
 const milestone = (title: string, description = "", remarks = "") => ({ title, description, remarks });
 
+/**
+ * Records saved before daily updates became a list still hold a single `dailyUpdate` object.
+ * They must keep reading correctly, and saving one must migrate it to the list.
+ */
+describe("records written before daily updates became a list", () => {
+  async function insertLegacyRecord(): Promise<string> {
+    const id = new Types.ObjectId();
+    await DailyMilestone.collection.insertOne({
+      _id: id,
+      officeId: fx.officeA._id,
+      date: new Date("2026-09-08T00:00:00.000Z"),
+      dailyUpdate: { title: "Legacy update", description: "Written before the change." },
+      milestones: [],
+      photos: [],
+      documents: [],
+      createdBy: new Types.ObjectId(fx.userA.id),
+      createdAt: new Date("2026-09-08T04:00:00.000Z"),
+      updatedAt: new Date("2026-09-08T04:00:00.000Z"),
+      __v: 0,
+    });
+    return String(id);
+  }
+
+  it("reads the old single update as a one-item list", async () => {
+    const id = await insertLegacyRecord();
+
+    expect((await getDailyMilestone(fx.userA, id)).dailyUpdates).toEqual([
+      { title: "Legacy update", description: "Written before the change.", photos: [], documents: [] },
+    ]);
+    const listed = await listDailyMilestones(fx.userA, { q: "legacy" });
+    expect(listed.items[0]?.dailyUpdates[0]?.title).toBe("Legacy update");
+  });
+
+  it("replaces the old field when the record is saved", async () => {
+    const id = await insertLegacyRecord();
+
+    await updateDailyMilestone(
+      fx.userA,
+      id,
+      await editInput(id, { dailyUpdates: [{ title: "Rewritten", description: "Now a list." }] }),
+    );
+
+    const stored = await DailyMilestone.collection.findOne({ _id: new Types.ObjectId(id) });
+    expect(stored?.dailyUpdate).toBeUndefined();
+    expect(stored?.dailyUpdates).toEqual([
+      { title: "Rewritten", description: "Now a list.", photos: [], documents: [] },
+    ]);
+  });
+});
+
 describe("createDailyMilestone (spec §57)", () => {
   it("creates Office A + 08 Sep 2026 for User A (office forced from the session)", async () => {
     const record = await createDailyMilestone(fx.userA, recordInput());
@@ -119,7 +169,7 @@ describe("createDailyMilestone (spec §57)", () => {
       officeId: String(fx.officeA._id),
       office: { id: String(fx.officeA._id), name: "Office A", code: "OFFICE-A" },
       date: "2026-09-08",
-      dailyUpdate: { title: "Admissions review", description: "Reviewed pending applications." },
+      dailyUpdates: [{ title: "Admissions review", description: "Reviewed pending applications." }],
       milestones: [{ title: "Shortlist published", description: "", remarks: "" }],
       createdBy: { id: fx.userA.id, name: "User A" },
     });
@@ -129,10 +179,46 @@ describe("createDailyMilestone (spec §57)", () => {
     expect(String(stored?.officeId)).toBe(String(fx.officeA._id));
   });
 
+  it("stores several daily updates for one date, in order", async () => {
+    const updates = [
+      { title: "Morning briefing", description: "Reviewed the day's priorities." },
+      { title: "Admissions review", description: "Reviewed pending applications." },
+      { title: "Vendor meeting", description: "Discussed the canteen contract." },
+    ];
+    const record = await createDailyMilestone(fx.userA, recordInput({ dailyUpdates: updates }));
+
+    expect(record.dailyUpdates).toEqual(updates.map((update) => ({ ...update, photos: [], documents: [] })));
+    const stored = await DailyMilestone.findById(record.id).lean();
+    expect(stored?.dailyUpdates.map((update) => update.title)).toEqual([
+      "Morning briefing",
+      "Admissions review",
+      "Vendor meeting",
+    ]);
+  });
+
+  it("rejects a record with no daily update", async () => {
+    await expectZodIssue(createDailyMilestone(fx.userA, recordInput({ dailyUpdates: [] })), "dailyUpdates");
+  });
+
+  it("finds a record by text in any of its daily updates", async () => {
+    await createDailyMilestone(
+      fx.userA,
+      recordInput({
+        dailyUpdates: [
+          { title: "Morning briefing", description: "Routine." },
+          { title: "Vendor meeting", description: "Canteen contract renewal." },
+        ],
+      }),
+    );
+
+    const found = await listDailyMilestones(fx.userA, { q: "canteen" });
+    expect(found.items).toHaveLength(1);
+  });
+
   it("prevents a duplicate for the same office and date with details.existingId", async () => {
     const first = await createDailyMilestone(fx.userA, recordInput());
 
-    await expectConflict(createDailyMilestone(fx.userA, recordInput({ dailyUpdate: { title: "Again", description: "Again" } })), first.id);
+    await expectConflict(createDailyMilestone(fx.userA, recordInput({ dailyUpdates: [{ title: "Again", description: "Again" }] })), first.id);
     // The administrator hits the same rule for Office A.
     await expectConflict(
       createDailyMilestone(fx.admin, recordInput({ officeId: String(fx.officeA._id) })),
@@ -209,11 +295,13 @@ describe("createDailyMilestone (spec §57)", () => {
         ],
       }),
     );
-    expect(record.milestones).toEqual([
-      { title: "First", description: "Desc 1", remarks: "Remark 1" },
-      { title: "Second", description: "", remarks: "" },
-      { title: "Third", description: "padded", remarks: "" },
-    ]);
+    expect(record.milestones).toEqual(
+      [
+        { title: "First", description: "Desc 1", remarks: "Remark 1" },
+        { title: "Second", description: "", remarks: "" },
+        { title: "Third", description: "padded", remarks: "" },
+      ].map((item) => ({ ...item, photos: [], documents: [] })),
+    );
 
     await expectZodIssue(
       createDailyMilestone(
@@ -235,12 +323,12 @@ describe("createDailyMilestone (spec §57)", () => {
 
   it("validates the daily update and date", async () => {
     await expectZodIssue(
-      createDailyMilestone(fx.userA, recordInput({ dailyUpdate: { title: "", description: "x" } })),
-      "dailyUpdate.title",
+      createDailyMilestone(fx.userA, recordInput({ dailyUpdates: [{ title: "", description: "x" }] })),
+      "dailyUpdates.0.title",
     );
     await expectZodIssue(
-      createDailyMilestone(fx.userA, recordInput({ dailyUpdate: { title: "x", description: "  " } })),
-      "dailyUpdate.description",
+      createDailyMilestone(fx.userA, recordInput({ dailyUpdates: [{ title: "x", description: "  " }] })),
+      "dailyUpdates.0.description",
     );
     await expectZodIssue(createDailyMilestone(fx.userA, recordInput({ date: "08-09-2026" })), "date");
   });
@@ -281,31 +369,31 @@ describe("updateDailyMilestone", () => {
     await createDailyMilestone(fx.userB, recordInput({ date: "2026-09-10" }));
     const record = await createDailyMilestone(fx.userA, recordInput({ date: "2026-09-08" }));
 
-    const sameDate = await updateDailyMilestone(fx.userA, record.id, await editInput(record.id, { dailyUpdate: { title: "Edited", description: "Edited description" } }),
+    const sameDate = await updateDailyMilestone(fx.userA, record.id, await editInput(record.id, { dailyUpdates: [{ title: "Edited", description: "Edited description" }] }),
     );
-    expect(sameDate).toMatchObject({ date: "2026-09-08", dailyUpdate: { title: "Edited" } });
+    expect(sameDate).toMatchObject({ date: "2026-09-08", dailyUpdates: [{ title: "Edited" }] });
 
     const moved = await updateDailyMilestone(fx.userA, record.id, await editInput(record.id, { date: "2026-09-10" }));
     expect(moved).toMatchObject({ id: record.id, date: "2026-09-10", officeId: String(fx.officeA._id) });
   });
 
   it("forbids User A from viewing or updating Office B's record", async () => {
-    const recordB = await seedRecord({ officeId: fx.officeB, dailyUpdate: { title: "Office B plan" } });
+    const recordB = await seedRecord({ officeId: fx.officeB, dailyUpdates: [{ title: "Office B plan" }] });
     const id = String(recordB._id);
 
     await expectForbidden(getDailyMilestone(fx.userA, id));
     await expectForbidden(
-      updateDailyMilestone(fx.userA, id, await editInput(id, { dailyUpdate: { title: "Hijack", description: "x" } })),
+      updateDailyMilestone(fx.userA, id, await editInput(id, { dailyUpdates: [{ title: "Hijack", description: "x" }] })),
     );
 
     const stored = await DailyMilestone.findById(id).lean();
-    expect(stored?.dailyUpdate.title).toBe("Office B plan");
+    expect(stored?.dailyUpdates[0]?.title).toBe("Office B plan");
 
     await expect(getDailyMilestone(fx.admin, id)).resolves.toMatchObject({ id, officeId: String(fx.officeB._id) });
     await expect(getDailyMilestone(fx.userB, id)).resolves.toMatchObject({ id });
     await expect(
-      updateDailyMilestone(fx.admin, id, await editInput(id, { dailyUpdate: { title: "Admin edit", description: "ok" } })),
-    ).resolves.toMatchObject({ dailyUpdate: { title: "Admin edit" } });
+      updateDailyMilestone(fx.admin, id, await editInput(id, { dailyUpdates: [{ title: "Admin edit", description: "ok" }] })),
+    ).resolves.toMatchObject({ dailyUpdates: [{ title: "Admin edit" }] });
   });
 
   it("never changes the office of an existing record", async () => {
@@ -401,37 +489,37 @@ describe("listDailyMilestones", () => {
     await seedRecord({
       officeId: fx.officeA,
       date: "2026-09-01",
-      dailyUpdate: { title: "Budget planning", description: "Quarterly figures" },
+      dailyUpdates: [{ title: "Budget planning", description: "Quarterly figures" }],
       milestones: [milestone("Draft circulated")],
     });
     await seedRecord({
       officeId: fx.officeA,
       date: "2026-09-02",
-      dailyUpdate: { title: "Events", description: "Preparations for the convocation ceremony" },
+      dailyUpdates: [{ title: "Events", description: "Preparations for the convocation ceremony" }],
       milestones: [],
     });
     await seedRecord({
       officeId: fx.officeA,
       date: "2026-09-03",
-      dailyUpdate: { title: "Facilities", description: "Routine" },
+      dailyUpdates: [{ title: "Facilities", description: "Routine" }],
       milestones: [milestone("Other"), milestone("Hostel audit completed")],
     });
     await seedRecord({
       officeId: fx.officeA,
       date: "2026-09-04",
-      dailyUpdate: { title: "Library", description: "Routine" },
+      dailyUpdates: [{ title: "Library", description: "Routine" }],
       milestones: [milestone("Phase 1", "Library RENOVATION started")],
     });
     await seedRecord({
       officeId: fx.officeA,
       date: "2026-09-05",
-      dailyUpdate: { title: "Legal", description: "Routine" },
+      dailyUpdates: [{ title: "Legal", description: "Routine" }],
       milestones: [milestone("MoU", "", "Pending signature from partner")],
     });
     await seedRecord({
       officeId: fx.officeB,
       date: "2026-09-01",
-      dailyUpdate: { title: "Budget planning (Office B)", description: "Office B figures" },
+      dailyUpdates: [{ title: "Budget planning (Office B)", description: "Office B figures" }],
       milestones: [milestone("Hostel audit scheduled")],
     });
   });
@@ -453,7 +541,7 @@ describe("listDailyMilestones", () => {
     expect(ownA.items[0]?.office?.name).toBe("Office A");
 
     const adminB = await listDailyMilestones(fx.admin, { officeId: String(fx.officeB._id) });
-    expect(adminB.items.map((item) => item.dailyUpdate.title)).toEqual(["Budget planning (Office B)"]);
+    expect(adminB.items.map((item) => item.dailyUpdates[0]?.title)).toEqual(["Budget planning (Office B)"]);
 
     await expect(listDailyMilestones(fx.userA, { officeId: String(fx.officeA._id) })).resolves.toMatchObject({
       total: 5,
@@ -466,8 +554,8 @@ describe("listDailyMilestones", () => {
     const titles = async (user = fx.userA, q: string) =>
       (await listDailyMilestones(user, { q })).items.map((item) => item.date).sort();
 
-    expect(await titles(fx.userA, "budget")).toEqual(["2026-09-01"]); // dailyUpdate.title
-    expect(await titles(fx.userA, "CONVOCATION")).toEqual(["2026-09-02"]); // dailyUpdate.description
+    expect(await titles(fx.userA, "budget")).toEqual(["2026-09-01"]); // dailyUpdates[0].title
+    expect(await titles(fx.userA, "CONVOCATION")).toEqual(["2026-09-02"]); // dailyUpdates[0].description
     expect(await titles(fx.userA, "hostel audit")).toEqual(["2026-09-03"]); // milestones.title
     expect(await titles(fx.userA, "renovation")).toEqual(["2026-09-04"]); // milestones.description
     expect(await titles(fx.userA, "signature")).toEqual(["2026-09-05"]); // milestones.remarks
@@ -515,7 +603,7 @@ describe("listMilestones (View all milestones)", () => {
         await seedRecord({
           officeId: fx.officeA,
           date: "2026-09-08",
-          dailyUpdate: { title: "Hostel update", description: "Daily update text only" },
+          dailyUpdates: [{ title: "Hostel update", description: "Daily update text only" }],
           milestones: [milestone("A8-first"), milestone("A8-second", "Fire safety drill"), milestone("A8-third", "", "Done")],
         })
       )._id,

@@ -222,10 +222,10 @@ describe("'today' is computed in Asia/Kolkata", () => {
   const INSTANT = new Date("2026-09-30T19:00:00.000Z");
 
   beforeEach(async () => {
-    await seedRecord({ officeId: fx.officeA, date: "2026-10-01", milestones: [ms("Kolkata today")], dailyUpdate: { title: "A Oct 1" } });
-    await seedRecord({ officeId: fx.officeA, date: "2026-09-30", milestones: [ms("UTC today")], dailyUpdate: { title: "A Sep 30" } });
-    await seedRecord({ officeId: fx.officeA, date: "2026-10-02", milestones: [ms("Tomorrow")], dailyUpdate: { title: "A Oct 2" } });
-    await seedRecord({ officeId: fx.officeB, date: "2026-09-30", milestones: [ms("B Sep 30")], dailyUpdate: { title: "B Sep 30" } });
+    await seedRecord({ officeId: fx.officeA, date: "2026-10-01", milestones: [ms("Kolkata today")], dailyUpdates: [{ title: "A Oct 1" }] });
+    await seedRecord({ officeId: fx.officeA, date: "2026-09-30", milestones: [ms("UTC today")], dailyUpdates: [{ title: "A Sep 30" }] });
+    await seedRecord({ officeId: fx.officeA, date: "2026-10-02", milestones: [ms("Tomorrow")], dailyUpdates: [{ title: "A Oct 2" }] });
+    await seedRecord({ officeId: fx.officeB, date: "2026-09-30", milestones: [ms("B Sep 30")], dailyUpdates: [{ title: "B Sep 30" }] });
 
     await seedVisitor({ officeId: fx.officeA, date: "2026-10-01", name: "A Oct 1 visitor", timeArrived: "00:10" });
     await seedVisitor({ officeId: fx.officeA, date: "2026-09-30", name: "A Sep 30 visitor", timeArrived: "23:50" });
@@ -256,7 +256,7 @@ describe("'today' is computed in Asia/Kolkata", () => {
     const data = await getUserDashboard(fx.userA);
     expect(data.today).toBe("2026-10-01");
     expect(data.month).toBe("2026-10");
-    expect(data.todayRecord?.dailyUpdate.title).toBe("A Oct 1");
+    expect(data.todayRecord?.dailyUpdates[0]?.title).toBe("A Oct 1");
     expect(data.todaysVisitors.map((visitor) => visitor.name)).toEqual(["A Oct 1 visitor"]);
     expect(data.todaysVisitorCount).toBe(1);
     expect(data.recentRecords.map((record) => [record.date, record.title])).toEqual([
@@ -273,11 +273,11 @@ describe("getUserDashboard", () => {
     const recordA = await seedRecord({
       officeId: fx.officeA,
       date: today,
-      dailyUpdate: { title: "Office A today", description: "Alpha work" },
+      dailyUpdates: [{ title: "Office A today", description: "Alpha work" }],
       milestones: [ms("Alpha milestone 1"), ms("Alpha milestone 2")],
       createdBy: fx.userADoc,
     });
-    await seedRecord({ officeId: fx.officeA, date: addDays(today, -1), dailyUpdate: { title: "Office A yesterday" }, milestones: [] });
+    await seedRecord({ officeId: fx.officeA, date: addDays(today, -1), dailyUpdates: [{ title: "Office A yesterday" }], milestones: [] });
     await seedVisitor({ officeId: fx.officeA, date: today, name: "Alpha late guest", timeArrived: "17:00" });
     await seedVisitor({ officeId: fx.officeA, date: today, name: "Alpha early guest", timeArrived: "09:00", createdBy: fx.userADoc });
     await seedVisitor({ officeId: fx.officeA, date: addDays(today, -1), name: "Alpha yesterday guest" });
@@ -286,10 +286,10 @@ describe("getUserDashboard", () => {
     const recordB = await seedRecord({
       officeId: fx.officeB,
       date: today,
-      dailyUpdate: { title: "SECRET-B record", description: "SECRET-B description" },
+      dailyUpdates: [{ title: "SECRET-B record", description: "SECRET-B description" }],
       milestones: [ms("SECRET-B milestone")],
     });
-    await seedRecord({ officeId: fx.officeB, date: addDays(today, -1), dailyUpdate: { title: "SECRET-B older" } });
+    await seedRecord({ officeId: fx.officeB, date: addDays(today, -1), dailyUpdates: [{ title: "SECRET-B older" }] });
     await seedVisitor({ officeId: fx.officeB, date: today, name: "SECRET-B guest", timeArrived: "08:00" });
 
     const data = await getUserDashboard(fx.userA);
@@ -300,7 +300,7 @@ describe("getUserDashboard", () => {
       id: String(recordA._id),
       officeId: String(fx.officeA._id),
       office: { name: "Office A" },
-      dailyUpdate: { title: "Office A today" },
+      dailyUpdates: [{ title: "Office A today" }],
       createdBy: { id: fx.userA.id, name: "User A" },
     });
     expect(data.todayRecord?.milestones.map((item) => item.title)).toEqual(["Alpha milestone 1", "Alpha milestone 2"]);
@@ -316,7 +316,7 @@ describe("getUserDashboard", () => {
     expect(serialized).not.toContain(String(recordB._id));
 
     const dataB = await getUserDashboard(fx.userB);
-    expect(dataB.todayRecord?.dailyUpdate.title).toBe("SECRET-B record");
+    expect(dataB.todayRecord?.dailyUpdates[0]?.title).toBe("SECRET-B record");
     expect(dataB.todaysVisitors.map((visitor) => visitor.name)).toEqual(["SECRET-B guest"]);
     expect(JSON.stringify(dataB)).not.toContain("Alpha");
   });

@@ -39,7 +39,7 @@ function dailyRecord(officeId: Types.ObjectId, date: Date) {
   return {
     officeId,
     date,
-    dailyUpdate: { title: "Daily update", description: "Description" },
+    dailyUpdates: [{ title: "Daily update", description: "Description" }],
     milestones: [],
     createdBy: new Types.ObjectId(),
   };
@@ -248,9 +248,9 @@ describe("dailyMilestones (spec §57)", () => {
     await expectValidationError(
       DailyMilestone.create({
         ...dailyRecord(office._id, businessDateToUtc("2026-09-08")),
-        dailyUpdate: { title: "", description: "Description" },
+        dailyUpdates: [{ title: "", description: "Description" }],
       }),
-      "dailyUpdate.title",
+      "dailyUpdates.0.title",
     );
     await expectValidationError(
       DailyMilestone.create({

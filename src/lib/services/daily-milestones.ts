@@ -17,7 +17,13 @@ import {
   resolveReadOfficeScope,
   resolveWriteOfficeId,
 } from "@/lib/permissions/scope";
-import { serializeAttachments, serializeDailyMilestone, type LeanDailyMilestone } from "@/lib/serializers";
+import {
+  serializeAttachments,
+  serializeDailyMilestone,
+  serializeDailyUpdates,
+  serializeMilestones,
+  type LeanDailyMilestone,
+} from "@/lib/serializers";
 import { requireActiveOffice } from "@/lib/services/office-options";
 import {
   addDays,
@@ -48,7 +54,8 @@ import type { Attachment, CurrentUser, DailyMilestoneDTO, OfficeRef, Paginated }
 const RESOURCE = "Daily record";
 const DUPLICATE_MESSAGE = "A daily record already exists for this office and date.";
 export const STALE_RECORD_MESSAGE = "This record was changed by someone else. Reload to see the latest version.";
-const RECORD_FIELDS = "officeId date dailyUpdate milestones photos documents createdBy createdAt updatedAt";
+const RECORD_FIELDS =
+  "officeId date dailyUpdates dailyUpdate milestones photos documents createdBy createdAt updatedAt";
 
 /** One milestone row for "View all milestones" and milestone search. */
 export interface MilestoneListItem {
@@ -138,6 +145,48 @@ function attachmentUrls(list: Attachment[]): string[] {
   return list.map((item) => item.fileUrl);
 }
 
+/**
+ * Files can hang off the record itself, one of its updates or one of its milestones. Authorization and
+ * Cloudinary clean-up must cover all of them, so they are flattened before every check.
+ */
+interface RecordAttachments {
+  photos: Attachment[];
+  documents: Attachment[];
+  dailyUpdates: { photos: Attachment[]; documents: Attachment[] }[];
+  milestones: { photos: Attachment[]; documents: Attachment[] }[];
+}
+
+function allPhotos(record: RecordAttachments): Attachment[] {
+  return [
+    ...record.photos,
+    ...record.dailyUpdates.flatMap((update) => update.photos),
+    ...record.milestones.flatMap((milestone) => milestone.photos),
+  ];
+}
+
+/** Flatten the file lists of a stored record (any field the query did not select reads as empty). */
+function storedAttachments(raw: {
+  photos?: unknown;
+  documents?: unknown;
+  dailyUpdates?: unknown;
+  milestones?: unknown;
+}): RecordAttachments {
+  return {
+    photos: serializeAttachments(raw.photos),
+    documents: serializeAttachments(raw.documents),
+    dailyUpdates: serializeDailyUpdates(raw),
+    milestones: serializeMilestones(raw.milestones),
+  };
+}
+
+function allDocuments(record: RecordAttachments): Attachment[] {
+  return [
+    ...record.documents,
+    ...record.dailyUpdates.flatMap((update) => update.documents),
+    ...record.milestones.flatMap((milestone) => milestone.documents),
+  ];
+}
+
 /** Past the last page -> the last page (like listOffices). */
 function clampPage(page: number, total: number, pageSize: number): number {
   return Math.min(page, Math.max(1, Math.ceil(total / pageSize)));
@@ -153,6 +202,9 @@ export async function listDailyMilestones(
   if (query.q) {
     const pattern = containsRegex(query.q);
     filter.$or = [
+      { "dailyUpdates.title": pattern },
+      { "dailyUpdates.description": pattern },
+      // Records written before daily updates became a list.
       { "dailyUpdate.title": pattern },
       { "dailyUpdate.description": pattern },
       { "milestones.title": pattern },
@@ -162,10 +214,12 @@ export async function listDailyMilestones(
   }
 
   await connectDB();
-  const total = await DailyMilestone.countDocuments(filter);
+  // strictQuery would drop the legacy `dailyUpdate.*` conditions above, hiding older records from search.
+  const total = await DailyMilestone.countDocuments(filter).setOptions({ strictQuery: false });
   const page = clampPage(query.page, total, query.pageSize);
   const { skip, limit } = paginationWindow(page, query.pageSize);
   const docs = await DailyMilestone.find(filter)
+    .setOptions({ strictQuery: false })
     .select(RECORD_FIELDS)
     .populate("officeId", "name code")
     .populate("createdBy", "name")
@@ -323,7 +377,7 @@ export async function createDailyMilestone(user: CurrentUser, rawInput: unknown)
 
   await connectDB();
   await requireActiveOffice(officeId);
-  assertAllowedAttachments(officeId, input.photos, input.documents);
+  assertAllowedAttachments(officeId, allPhotos(input), allDocuments(input));
 
   const date = businessDateToUtc(input.date);
   const existingId = await findRecordIdFor(officeId, date);
@@ -334,7 +388,7 @@ export async function createDailyMilestone(user: CurrentUser, rawInput: unknown)
     const created = await DailyMilestone.create({
       officeId,
       date,
-      dailyUpdate: input.dailyUpdate,
+      dailyUpdates: input.dailyUpdates,
       milestones: input.milestones,
       photos: input.photos,
       documents: input.documents,
@@ -371,14 +425,17 @@ export async function updateDailyMilestone(
   if (doc.updatedAt.getTime() !== expectedUpdatedAt.getTime()) throw new ConflictError(STALE_RECORD_MESSAGE);
 
   const recordOfficeId = String(doc.officeId);
-  const previousPhotos = serializeAttachments(doc.toObject().photos);
-  const previousDocuments = serializeAttachments(doc.toObject().documents);
+  const stored = storedAttachments(doc.toObject());
+  const previousPhotos = allPhotos(stored);
+  const previousDocuments = allDocuments(stored);
+  const nextPhotos = allPhotos(input);
+  const nextDocuments = allDocuments(input);
   // Files already on the record stay valid; newly added ones must be this office's uploads.
   const previousUrls = new Set([...attachmentUrls(previousPhotos), ...attachmentUrls(previousDocuments)]);
   assertAllowedAttachments(
     recordOfficeId,
-    input.photos.filter((item) => !previousUrls.has(item.fileUrl)),
-    input.documents.filter((item) => !previousUrls.has(item.fileUrl)),
+    nextPhotos.filter((item) => !previousUrls.has(item.fileUrl)),
+    nextDocuments.filter((item) => !previousUrls.has(item.fileUrl)),
   );
 
   const date = businessDateToUtc(input.date);
@@ -389,7 +446,7 @@ export async function updateDailyMilestone(
 
   const fields = {
     date,
-    dailyUpdate: input.dailyUpdate,
+    dailyUpdates: input.dailyUpdates,
     milestones: input.milestones,
     photos: input.photos,
     documents: input.documents,
@@ -405,8 +462,10 @@ export async function updateDailyMilestone(
     const updatedAt = new Date(Math.max(Date.now(), expectedUpdatedAt.getTime() + 1));
     const result = await DailyMilestone.updateOne(
       { _id: doc._id, updatedAt: expectedUpdatedAt },
-      { $set: { ...fields, updatedAt } },
-      { timestamps: false },
+      // $unset clears the pre-list `dailyUpdate` field when an older record is saved.
+      { $set: { ...fields, updatedAt }, $unset: { dailyUpdate: "" } },
+      // strict: false lets $unset clear `dailyUpdate`, which is no longer part of the schema.
+      { timestamps: false, strict: false },
     );
     matched = result.matchedCount;
   } catch (error) {
@@ -418,8 +477,8 @@ export async function updateDailyMilestone(
   await deleteCloudinaryFiles(
     officeOwnedUrls(
       recordOfficeId,
-      removedAttachmentUrls(previousPhotos, input.photos),
-      removedAttachmentUrls(previousDocuments, input.documents),
+      removedAttachmentUrls(previousPhotos, nextPhotos),
+      removedAttachmentUrls(previousDocuments, nextDocuments),
     ),
   );
 
@@ -433,8 +492,12 @@ export async function deleteDailyMilestone(user: CurrentUser, id: string): Promi
 
   await connectDB();
   const record = await DailyMilestone.findById(id)
-    .select("officeId photos documents")
-    .lean<{ _id: Types.ObjectId; officeId: Types.ObjectId; photos?: unknown; documents?: unknown }>();
+    .select("officeId photos documents dailyUpdates dailyUpdate milestones")
+    .lean<
+      { _id: Types.ObjectId; officeId: Types.ObjectId } & Partial<
+        Pick<LeanDailyMilestone, "photos" | "documents" | "dailyUpdates" | "dailyUpdate" | "milestones">
+      >
+    >();
   if (!record) throw new NotFoundError(RESOURCE);
   assertRecordAccess(user, record);
 
@@ -445,8 +508,8 @@ export async function deleteDailyMilestone(user: CurrentUser, id: string): Promi
   await deleteCloudinaryFiles(
     officeOwnedUrls(
       String(record.officeId),
-      attachmentUrls(serializeAttachments(record.photos)),
-      attachmentUrls(serializeAttachments(record.documents)),
+      attachmentUrls(allPhotos(storedAttachments(record))),
+      attachmentUrls(allDocuments(storedAttachments(record))),
     ),
   );
 }

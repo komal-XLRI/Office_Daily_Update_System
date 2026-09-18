@@ -67,7 +67,7 @@ const visitorInput = (overrides: Record<string, unknown> = {}) => ({
 
 const recordInput = (overrides: Record<string, unknown> = {}) => ({
   date: "2026-09-08",
-  dailyUpdate: { title: "Update", description: "Description" },
+  dailyUpdates: [{ title: "Update", description: "Description" }],
   milestones: [],
   photos: [],
   documents: [],
@@ -122,7 +122,7 @@ describe("updateDailyMilestone optimistic concurrency", () => {
 
     const newer = await updateDailyMilestone(fx.userA, created.id, {
       ...recordInput({
-        dailyUpdate: { title: "Newer", description: "Saved first" },
+        dailyUpdates: [{ title: "Newer", description: "Saved first" }],
         photos: [photo("original"), photo("added-by-other")],
       }),
       expectedUpdatedAt: snapshot,
@@ -130,7 +130,7 @@ describe("updateDailyMilestone optimistic concurrency", () => {
     deleteResources.mockClear();
 
     const error = await updateDailyMilestone(fx.admin, created.id, {
-      ...recordInput({ dailyUpdate: { title: "Stale", description: "Old form" }, photos: [] }),
+      ...recordInput({ dailyUpdates: [{ title: "Stale", description: "Old form" }], photos: [] }),
       expectedUpdatedAt: snapshot,
     }).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ConflictError);
@@ -138,13 +138,13 @@ describe("updateDailyMilestone optimistic concurrency", () => {
     expect((error as ConflictError).details).toBeUndefined();
 
     const stored = await DailyMilestone.findById(created.id).lean();
-    expect(stored?.dailyUpdate.title).toBe("Newer");
+    expect(stored?.dailyUpdates[0]?.title).toBe("Newer");
     expect(stored?.photos.map((item) => item.fileName)).toEqual(["original.jpg", "added-by-other.jpg"]);
     expect(deleteResources).not.toHaveBeenCalled();
 
     await expect(
       updateDailyMilestone(fx.userA, created.id, { ...recordInput(), expectedUpdatedAt: newer.updatedAt }),
-    ).resolves.toMatchObject({ dailyUpdate: { title: "Update" } });
+    ).resolves.toMatchObject({ dailyUpdates: [{ title: "Update" }] });
   });
 
   it("rejects a malformed expectedUpdatedAt", async () => {

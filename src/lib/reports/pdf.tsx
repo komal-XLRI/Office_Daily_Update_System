@@ -9,6 +9,8 @@ import type { Attachment } from "@/types";
 import {
   REPORT_EMPTY_MESSAGES,
   REPORT_IMPORTANCE_LABELS,
+  recordDocuments,
+  recordPhotos,
   isLinkableUrl,
   noDailyUpdatesMessage,
   reportRangeHeading,
@@ -173,6 +175,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   attachmentGroup: { flexDirection: "row", marginTop: 1 },
+  itemAttachments: { marginTop: 2, marginBottom: 2 },
   attachmentKind: { width: 62, color: COLORS.muted },
   attachmentList: { flex: 1 },
   link: { color: COLORS.link, textDecoration: "none" },
@@ -291,6 +294,34 @@ function Attachments({ photos, documents }: { photos: Attachment[]; documents: A
   );
 }
 
+/** Files attached to one daily update or milestone, printed with it. Nothing is printed when empty. */
+function ItemAttachments({ item }: { item?: { photos: Attachment[]; documents: Attachment[] } }) {
+  if (!item || (item.photos.length === 0 && item.documents.length === 0)) return null;
+  return (
+    <View style={styles.itemAttachments}>
+      <Attachments photos={item.photos} documents={item.documents} />
+    </View>
+  );
+}
+
+/**
+ * Closing file section. Files attached to an update or a milestone are printed with it, so this lists
+ * only what was attached to the day itself — or says the record has no files at all.
+ */
+function DayFiles({ record }: { record: ReportDailyRecord }) {
+  const hasDayFiles = record.photos.length > 0 || record.documents.length > 0;
+  const hasAnyFiles = recordPhotos(record).length > 0 || recordDocuments(record).length > 0;
+  if (!hasDayFiles && hasAnyFiles) return null;
+  return (
+    <View>
+      <Text style={styles.label} minPresenceAhead={16}>
+        {hasDayFiles ? "Other files for this day" : "Attachments"}
+      </Text>
+      <Attachments photos={record.photos} documents={record.documents} />
+    </View>
+  );
+}
+
 function DailyRecordBlock({ record }: { record: ReportDailyRecord }) {
   return (
     <View style={styles.record}>
@@ -298,12 +329,24 @@ function DailyRecordBlock({ record }: { record: ReportDailyRecord }) {
       <View wrap={false} minPresenceAhead={30}>
         <Text style={styles.dateBar}>{formatBusinessDate(record.date, "long")}</Text>
         <View style={styles.recordBody}>
-          <Text style={styles.label}>Daily Update</Text>
-          <Para style={styles.updateTitle}>{record.dailyUpdate.title}</Para>
+          <Text style={styles.label}>
+            {record.dailyUpdates.length === 1
+              ? "Daily Update"
+              : `Daily Updates (${record.dailyUpdates.length})`}
+          </Text>
+          <Para style={styles.updateTitle}>{record.dailyUpdates[0]?.title ?? ""}</Para>
         </View>
       </View>
       <View style={styles.recordBody}>
-        <Para style={styles.paragraph}>{record.dailyUpdate.description}</Para>
+        <Para style={styles.paragraph}>{record.dailyUpdates[0]?.description ?? ""}</Para>
+        <ItemAttachments item={record.dailyUpdates[0]} />
+        {record.dailyUpdates.slice(1).map((update, index) => (
+          <View key={`${index}-${update.title}`}>
+            <Para style={styles.updateTitle}>{update.title}</Para>
+            <Para style={styles.paragraph}>{update.description}</Para>
+            <ItemAttachments item={update} />
+          </View>
+        ))}
 
         <Text style={styles.label} minPresenceAhead={24}>
           Milestones ({record.milestones.length})
@@ -320,14 +363,12 @@ function DailyRecordBlock({ record }: { record: ReportDailyRecord }) {
               <Para style={styles.milestoneTitle}>{`${index + 1}. ${milestone.title}`}</Para>
               {milestone.description ? <Para>{milestone.description}</Para> : null}
               {milestone.remarks ? <Para style={styles.remarks}>{`Remarks: ${milestone.remarks}`}</Para> : null}
+              <ItemAttachments item={milestone} />
             </View>
           ))
         )}
 
-        <Text style={styles.label} minPresenceAhead={16}>
-          Attachments
-        </Text>
-        <Attachments photos={record.photos} documents={record.documents} />
+        <DayFiles record={record} />
       </View>
     </View>
   );

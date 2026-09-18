@@ -4,6 +4,10 @@ import type { Attachment } from "@/types";
 import {
   REPORT_EMPTY_MESSAGES,
   REPORT_IMPORTANCE_LABELS,
+  dailyUpdateBodyCell,
+  dailyUpdateTitleCell,
+  recordDocuments,
+  recordPhotos,
   neutralizeFormula,
   noDailyUpdatesMessage,
   reportRangeHeading,
@@ -45,7 +49,21 @@ const VISITOR_HEADERS = [
   "Documents",
 ];
 
-const COLUMN_COUNT = Math.max(DAILY_HEADERS.length, VISITOR_HEADERS.length);
+const ATTACHMENT_HEADERS = [
+  "Office",
+  "Date",
+  "Attached To",
+  "Title",
+  "Type",
+  "File Name",
+  "File URL",
+];
+
+const COLUMN_COUNT = Math.max(
+  DAILY_HEADERS.length,
+  VISITOR_HEADERS.length,
+  ATTACHMENT_HEADERS.length,
+);
 
 function escapeCell(value: CsvCell): string {
   if (typeof value === "number") return String(value);
@@ -83,8 +101,13 @@ export function reportToCsv(data: ReportData): string {
   let dailyRows = 0;
   for (const section of sections) {
     for (const record of section.dailyRecords) {
-      const base = [section.office.name, record.date, record.dailyUpdate.title, record.dailyUpdate.description];
-      const attachments = [attachmentCell(record.photos), attachmentCell(record.documents)];
+      const base = [
+        section.office.name,
+        record.date,
+        dailyUpdateTitleCell(record.dailyUpdates),
+        dailyUpdateBodyCell(record.dailyUpdates),
+      ];
+      const attachments = [attachmentCell(recordPhotos(record)), attachmentCell(recordDocuments(record))];
       if (record.milestones.length === 0) {
         rows.push([...base, "", "", "", ...attachments]);
       } else {
@@ -118,6 +141,40 @@ export function reportToCsv(data: ReportData): string {
     }
   }
   if (visitorRows === 0) rows.push([REPORT_EMPTY_MESSAGES.visitors]);
+
+  // One row per file, naming what it was attached to (the day, an update, a milestone or a visitor).
+  rows.push([], ["Attachments"], ATTACHMENT_HEADERS);
+
+  let attachmentRows = 0;
+  const addFiles = (office: string, date: string, source: string, title: string, files: Attachment[], kind: string) => {
+    for (const file of files) {
+      rows.push([office, date, source, title, kind, file.fileName, file.fileUrl]);
+      attachmentRows += 1;
+    }
+  };
+  for (const section of sections) {
+    const office = section.office.name;
+    for (const record of section.dailyRecords) {
+      record.dailyUpdates.forEach((update, index) => {
+        const title = `${index + 1}. ${update.title}`;
+        addFiles(office, record.date, "Daily Update", title, update.photos, "Photo");
+        addFiles(office, record.date, "Daily Update", title, update.documents, "Document");
+      });
+      record.milestones.forEach((milestone, index) => {
+        const title = `${index + 1}. ${milestone.title}`;
+        addFiles(office, record.date, "Milestone", title, milestone.photos, "Photo");
+        addFiles(office, record.date, "Milestone", title, milestone.documents, "Document");
+      });
+      const dayTitle = dailyUpdateTitleCell(record.dailyUpdates);
+      addFiles(office, record.date, "Daily Record", dayTitle, record.photos, "Photo");
+      addFiles(office, record.date, "Daily Record", dayTitle, record.documents, "Document");
+    }
+    for (const visitor of section.visitors) {
+      addFiles(office, visitor.date, "Visitor", visitor.name, visitor.photos, "Photo");
+      addFiles(office, visitor.date, "Visitor", visitor.name, visitor.documents, "Document");
+    }
+  }
+  if (attachmentRows === 0) rows.push(["No attachments."]);
 
   return BOM + rows.map(toLine).join(CRLF) + CRLF;
 }

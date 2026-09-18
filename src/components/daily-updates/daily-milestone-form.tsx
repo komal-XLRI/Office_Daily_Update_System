@@ -18,11 +18,15 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiClientError, apiRequest, applyFieldErrors, getErrorMessage } from "@/lib/api/client";
-import { MAX_MILESTONES_PER_RECORD } from "@/lib/constants";
-import { dailyMilestoneInputSchema, type DailyMilestoneInput } from "@/lib/validation/daily-milestone";
+import { MAX_DAILY_UPDATES_PER_RECORD, MAX_MILESTONES_PER_RECORD } from "@/lib/constants";
+import {
+  dailyMilestoneInputSchema,
+  type DailyMilestoneFormInput,
+  type DailyMilestoneInput,
+} from "@/lib/validation/daily-milestone";
 import type { DailyMilestoneDTO, OfficeOption } from "@/types";
 
-export type DailyMilestoneFormValues = Omit<DailyMilestoneInput, "officeId">;
+export type DailyMilestoneFormValues = Omit<DailyMilestoneFormInput, "officeId">;
 
 export interface DailyMilestoneFormProps {
   mode: "create" | "edit";
@@ -41,6 +45,15 @@ export interface DailyMilestoneFormProps {
   expectedUpdatedAt?: string;
 }
 
+/** Every place a file list can live on the form. */
+type AttachmentPath =
+  | "photos"
+  | "documents"
+  | `dailyUpdates.${number}.photos`
+  | `dailyUpdates.${number}.documents`
+  | `milestones.${number}.photos`
+  | `milestones.${number}.documents`;
+
 interface ConflictState {
   message: string;
   existingId: string | null;
@@ -49,6 +62,7 @@ interface ConflictState {
 }
 
 const EMPTY_MILESTONE = { title: "", description: "", remarks: "" };
+const EMPTY_DAILY_UPDATE = { title: "", description: "" };
 
 /** First error message in a (possibly nested) React Hook Form error object, e.g. for array fields. */
 function firstErrorMessage(error: unknown, depth = 0): string | undefined {
@@ -63,7 +77,7 @@ function firstErrorMessage(error: unknown, depth = 0): string | undefined {
   return undefined;
 }
 
-/** Create/edit form for a daily record: daily update, dynamic milestones, photos and documents (spec §15). */
+/** Create/edit form for a daily record: daily updates, milestones, photos and documents (spec §15). */
 export function DailyMilestoneForm({
   mode,
   recordId,
@@ -95,13 +109,32 @@ export function DailyMilestoneForm({
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm<DailyMilestoneInput>({
+    // Input type in (nested file lists may be omitted), parsed output type out.
+  } = useForm<DailyMilestoneFormInput, unknown, DailyMilestoneInput>({
     resolver: zodResolver(schema),
     defaultValues: {
       ...defaultValues,
       officeId: chooseOffice ? (officeId ?? undefined) : undefined,
     },
   });
+
+  const {
+    fields: updateFields,
+    append: appendUpdate,
+    remove: removeUpdateAt,
+  } = useFieldArray({ control, name: "dailyUpdates" });
+  const addUpdateButtonRef = useRef<HTMLButtonElement>(null);
+
+  /** Remove one of several updates, then move focus to the next update's Title (or the Add button). */
+  function removeUpdate(index: number) {
+    if (updateFields.length <= 1) return;
+    const hasNext = index < updateFields.length - 1;
+    removeUpdateAt(index);
+    requestAnimationFrame(() => {
+      const title = hasNext ? document.getElementById(`dailyUpdates-${index}-title`) : null;
+      (title ?? addUpdateButtonRef.current)?.focus();
+    });
+  }
 
   const { fields, append, remove } = useFieldArray({ control, name: "milestones" });
   const addMilestoneButtonRef = useRef<HTMLButtonElement>(null);
@@ -118,15 +151,64 @@ export function DailyMilestoneForm({
   }
   const selectedOfficeId = useWatch({ control, name: "officeId" });
 
-  const [uploading, setUploading] = useState({ photos: false, documents: false });
+  // A new entry can only be started once the one before it is filled in, so no blank blocks pile up.
+  const watchedUpdates = useWatch({ control, name: "dailyUpdates" });
+  const lastUpdate = watchedUpdates?.[updateFields.length - 1];
+  const canAddUpdate =
+    updateFields.length === 0 || Boolean(lastUpdate?.title?.trim() && lastUpdate?.description?.trim());
+
+  const watchedMilestones = useWatch({ control, name: "milestones" });
+  const lastMilestone = watchedMilestones?.[fields.length - 1];
+  const canAddMilestone = fields.length === 0 || Boolean(lastMilestone?.title?.trim());
+
+  // One entry per uploader on the page, keyed by its id; the form cannot be submitted while any is busy.
+  const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [conflict, setConflict] = useState<ConflictState | null>(null);
   const [navigating, setNavigating] = useState(false);
 
-  const isUploading = uploading.photos || uploading.documents;
+  const isUploading = Object.values(uploading).some(Boolean);
   const busy = isSubmitting || navigating;
   const uploadOfficeId = chooseOffice ? (selectedOfficeId ?? null) : (officeId ?? null);
   const uploadsBlocked = chooseOffice && !selectedOfficeId;
   const cancelHref = mode === "edit" && recordId ? `/daily-updates/${recordId}` : "/daily-updates";
+
+  /** Photos or documents for the record, one daily update or one milestone. */
+  function attachmentField(
+    name: AttachmentPath,
+    kind: "photos" | "documents",
+    id: string,
+    label: string,
+  ) {
+    return (
+      <Controller
+        control={control}
+        name={name}
+        render={({ field, fieldState }) => {
+          const message = firstErrorMessage(fieldState.error);
+          return (
+            <Field data-invalid={message ? true : undefined}>
+              <FieldLabel htmlFor={id}>{label}</FieldLabel>
+              <FileUploader
+                id={id}
+                kind={kind}
+                value={Array.isArray(field.value) ? field.value : []}
+                onChange={field.onChange}
+                officeId={uploadOfficeId}
+                maxFileSizeMb={maxFileSizeMb}
+                disabled={busy || uploadsBlocked}
+                onUploadingChange={(value) =>
+                  setUploading((previous) => ({ ...previous, [id]: value }))
+                }
+                aria-invalid={message ? true : undefined}
+                aria-describedby={message ? `${id}-error` : undefined}
+              />
+              <FieldError id={`${id}-error`} errors={[message ? { message } : undefined]} />
+            </Field>
+          );
+        }}
+      />
+    );
+  }
 
   async function onSubmit(values: DailyMilestoneInput) {
     if (isUploading) {
@@ -227,41 +309,116 @@ export function DailyMilestoneForm({
       <Card>
         <CardHeader>
           <CardTitle>
-            <h2>Daily update</h2>
+            <h2>Daily Updates</h2>
           </CardTitle>
-          <CardDescription>Summarise the work carried out on this date.</CardDescription>
+          <CardDescription>
+            Summarise the work carried out on this date. Use Add Daily Update to record more than one.
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <FieldGroup>
-            <Field data-invalid={errors.dailyUpdate?.title ? true : undefined}>
-              <FieldLabel htmlFor="dailyUpdate-title">Daily Update Title</FieldLabel>
-              <Input
-                id="dailyUpdate-title"
-                maxLength={200}
-                disabled={busy}
-                aria-invalid={errors.dailyUpdate?.title ? true : undefined}
-                aria-describedby={errors.dailyUpdate?.title ? "dailyUpdate-title-error" : undefined}
-                {...register("dailyUpdate.title")}
-              />
-              <FieldError id="dailyUpdate-title-error" errors={[errors.dailyUpdate?.title]} />
-            </Field>
-            <Field data-invalid={errors.dailyUpdate?.description ? true : undefined}>
-              <FieldLabel htmlFor="dailyUpdate-description">Daily Update Description</FieldLabel>
-              <Textarea
-                id="dailyUpdate-description"
-                rows={6}
-                maxLength={10000}
-                className="min-h-32"
-                disabled={busy}
-                aria-invalid={errors.dailyUpdate?.description ? true : undefined}
-                aria-describedby={
-                  errors.dailyUpdate?.description ? "dailyUpdate-description-error" : undefined
-                }
-                {...register("dailyUpdate.description")}
-              />
-              <FieldError id="dailyUpdate-description-error" errors={[errors.dailyUpdate?.description]} />
-            </Field>
-          </FieldGroup>
+        <CardContent className="flex flex-col gap-4">
+          <ol className="flex flex-col gap-4">
+            {updateFields.map((item, index) => {
+              const itemErrors = errors.dailyUpdates?.[index];
+              const base = `dailyUpdates-${index}`;
+              const number = index + 1;
+              const single = updateFields.length === 1;
+              return (
+                <li key={item.id}>
+                  <div
+                    role="group"
+                    aria-labelledby={`${base}-heading`}
+                    className="flex flex-col gap-4 rounded-lg border p-4"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 id={`${base}-heading`} className="text-sm font-medium">
+                        {single ? "Daily update" : `Daily update ${number}`}
+                      </h3>
+                      {single ? null : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => removeUpdate(index)}
+                          aria-label={`Remove daily update ${number}`}
+                        >
+                          <Trash2Icon data-icon="inline-start" aria-hidden="true" />
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                    <Field data-invalid={itemErrors?.title ? true : undefined}>
+                      <FieldLabel htmlFor={`${base}-title`}>Title</FieldLabel>
+                      <Input
+                        id={`${base}-title`}
+                        maxLength={200}
+                        disabled={busy}
+                        aria-invalid={itemErrors?.title ? true : undefined}
+                        aria-describedby={itemErrors?.title ? `${base}-title-error` : undefined}
+                        {...register(`dailyUpdates.${index}.title`)}
+                      />
+                      <FieldError id={`${base}-title-error`} errors={[itemErrors?.title]} />
+                    </Field>
+                    <Field data-invalid={itemErrors?.description ? true : undefined}>
+                      <FieldLabel htmlFor={`${base}-description`}>Description</FieldLabel>
+                      <Textarea
+                        id={`${base}-description`}
+                        rows={6}
+                        maxLength={10000}
+                        className="min-h-32"
+                        disabled={busy}
+                        aria-invalid={itemErrors?.description ? true : undefined}
+                        aria-describedby={itemErrors?.description ? `${base}-description-error` : undefined}
+                        {...register(`dailyUpdates.${index}.description`)}
+                      />
+                      <FieldError id={`${base}-description-error`} errors={[itemErrors?.description]} />
+                    </Field>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {attachmentField(
+                        `dailyUpdates.${index}.photos`,
+                        "photos",
+                        `${base}-photos`,
+                        "Photos for this update",
+                      )}
+                      {attachmentField(
+                        `dailyUpdates.${index}.documents`,
+                        "documents",
+                        `${base}-documents`,
+                        "Documents for this update",
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+
+          <FieldError
+            errors={[{ message: errors.dailyUpdates?.message ?? errors.dailyUpdates?.root?.message }]}
+          />
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              ref={addUpdateButtonRef}
+              type="button"
+              variant="outline"
+              disabled={busy || !canAddUpdate || updateFields.length >= MAX_DAILY_UPDATES_PER_RECORD}
+              aria-describedby={canAddUpdate ? undefined : "add-update-hint"}
+              onClick={() => appendUpdate({ ...EMPTY_DAILY_UPDATE })}
+            >
+              <PlusIcon data-icon="inline-start" aria-hidden="true" />
+              Add Daily Update
+            </Button>
+            {updateFields.length >= MAX_DAILY_UPDATES_PER_RECORD ? (
+              <p className="text-muted-foreground text-sm">
+                A maximum of {MAX_DAILY_UPDATES_PER_RECORD} daily updates is allowed.
+              </p>
+            ) : canAddUpdate ? null : (
+              <p id="add-update-hint" className="text-muted-foreground text-sm">
+                Fill in the title and description above before adding another update.
+              </p>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -348,6 +505,20 @@ export function DailyMilestoneForm({
                           <FieldError id={`${base}-remarks-error`} errors={[itemErrors?.remarks]} />
                         </Field>
                       </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        {attachmentField(
+                          `milestones.${index}.photos`,
+                          "photos",
+                          `${base}-photos`,
+                          "Photos for this milestone",
+                        )}
+                        {attachmentField(
+                          `milestones.${index}.documents`,
+                          "documents",
+                          `${base}-documents`,
+                          "Documents for this milestone",
+                        )}
+                      </div>
                     </div>
                   </li>
                 );
@@ -364,7 +535,8 @@ export function DailyMilestoneForm({
               ref={addMilestoneButtonRef}
               type="button"
               variant="outline"
-              disabled={busy || fields.length >= MAX_MILESTONES_PER_RECORD}
+              disabled={busy || !canAddMilestone || fields.length >= MAX_MILESTONES_PER_RECORD}
+              aria-describedby={canAddMilestone ? undefined : "add-milestone-hint"}
               onClick={() => append({ ...EMPTY_MILESTONE })}
             >
               <PlusIcon data-icon="inline-start" aria-hidden="true" />
@@ -374,7 +546,11 @@ export function DailyMilestoneForm({
               <p className="text-muted-foreground text-sm">
                 A maximum of {MAX_MILESTONES_PER_RECORD} milestones is allowed.
               </p>
-            ) : null}
+            ) : canAddMilestone ? null : (
+              <p id="add-milestone-hint" className="text-muted-foreground text-sm">
+                Give the milestone above a title before adding another one.
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -382,70 +558,18 @@ export function DailyMilestoneForm({
       <Card>
         <CardHeader>
           <CardTitle>
-            <h2>Attachments</h2>
+            <h2>Other files for this day</h2>
           </CardTitle>
           <CardDescription>
             {uploadsBlocked
               ? "Select an office before uploading files."
-              : "Upload photos and supporting documents for this record."}
+              : "Optional. Files that belong to the day as a whole rather than to one update or milestone."}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <FieldGroup>
-            <Controller
-              control={control}
-              name="photos"
-              render={({ field, fieldState }) => {
-                const message = firstErrorMessage(fieldState.error);
-                return (
-                  <Field data-invalid={message ? true : undefined}>
-                    <FieldLabel htmlFor="photos-upload">Photos</FieldLabel>
-                    <FileUploader
-                      id="photos-upload"
-                      kind="photos"
-                      value={field.value}
-                      onChange={field.onChange}
-                      officeId={uploadOfficeId}
-                      maxFileSizeMb={maxFileSizeMb}
-                      disabled={busy || uploadsBlocked}
-                      onUploadingChange={(value) =>
-                        setUploading((previous) => ({ ...previous, photos: value }))
-                      }
-                      aria-invalid={message ? true : undefined}
-                      aria-describedby={message ? "photos-error" : undefined}
-                    />
-                    <FieldError id="photos-error" errors={[message ? { message } : undefined]} />
-                  </Field>
-                );
-              }}
-            />
-            <Controller
-              control={control}
-              name="documents"
-              render={({ field, fieldState }) => {
-                const message = firstErrorMessage(fieldState.error);
-                return (
-                  <Field data-invalid={message ? true : undefined}>
-                    <FieldLabel htmlFor="documents-upload">Documents</FieldLabel>
-                    <FileUploader
-                      id="documents-upload"
-                      kind="documents"
-                      value={field.value}
-                      onChange={field.onChange}
-                      officeId={uploadOfficeId}
-                      maxFileSizeMb={maxFileSizeMb}
-                      disabled={busy || uploadsBlocked}
-                      onUploadingChange={(value) =>
-                        setUploading((previous) => ({ ...previous, documents: value }))
-                      }
-                      aria-invalid={message ? true : undefined}
-                      aria-describedby={message ? "documents-error" : undefined}
-                    />
-                    <FieldError id="documents-error" errors={[message ? { message } : undefined]} />
-                  </Field>
-                );
-              }}
-            />
+            {attachmentField("photos", "photos", "photos-upload", "Photos")}
+            {attachmentField("documents", "documents", "documents-upload", "Documents")}
           </FieldGroup>
         </CardContent>
       </Card>

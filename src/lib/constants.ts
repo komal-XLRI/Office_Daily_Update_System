@@ -16,4 +16,6 @@ export const MAX_ATTACHMENTS_PER_FIELD = 20;
 
 export const MAX_MILESTONES_PER_RECORD = 50;
 
+export const MAX_DAILY_UPDATES_PER_RECORD = 20;
+
 export const DEFAULT_PAGE_SIZE = 20;

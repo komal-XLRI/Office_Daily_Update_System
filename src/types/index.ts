@@ -66,6 +66,15 @@ export interface MilestoneDTO {
   title: string;
   description: string;
   remarks: string;
+  photos: Attachment[];
+  documents: Attachment[];
+}
+
+export interface DailyUpdateDTO {
+  title: string;
+  description: string;
+  photos: Attachment[];
+  documents: Attachment[];
 }
 
 export interface DailyMilestoneDTO {
@@ -74,10 +83,7 @@ export interface DailyMilestoneDTO {
   office: OfficeRef | null;
   /** Business date, "YYYY-MM-DD". */
   date: string;
-  dailyUpdate: {
-    title: string;
-    description: string;
-  };
+  dailyUpdates: DailyUpdateDTO[];
   milestones: MilestoneDTO[];
   photos: Attachment[];
   documents: Attachment[];

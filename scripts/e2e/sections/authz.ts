@@ -58,8 +58,8 @@ export async function runAuthzSection(ctx: E2EContext): Promise<void> {
     expectApiError(await userA.get(`/api/daily-milestones/${id}`), 403, "FORBIDDEN");
     expectApiError(await userA.patch(`/api/daily-milestones/${id}`, dailyBody(DATE, "Hijacked", [])), 403, "FORBIDDEN");
     expectApiError(await userA.delete(`/api/daily-milestones/${id}`), 403, "FORBIDDEN");
-    const stored = await DailyMilestone.findById(id).select("dailyUpdate officeId").lean();
-    assert(stored && stored.dailyUpdate.title.includes(seed.keywords.b), `Office B record changed: ${JSON.stringify(stored)}`);
+    const stored = await DailyMilestone.findById(id).select("dailyUpdates officeId").lean();
+    assert(stored && stored.dailyUpdates[0]?.title.includes(seed.keywords.b), `Office B record changed: ${JSON.stringify(stored)}`);
   });
 
   await h.check("User A cannot move an own visitor to Office B via PATCH body officeId -> 403", async () => {
