@@ -93,7 +93,7 @@ export default async function NewDailyUpdatePage({
           officeName={admin ? null : user.officeName}
           defaultValues={{
             date,
-            dailyUpdate: { title: "", description: "" },
+            dailyUpdates: [{ title: "", description: "" }],
             milestones: [],
             photos: [],
             documents: [],

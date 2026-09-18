@@ -130,7 +130,8 @@ interface RecentRecordRow {
 
 const MILESTONE_COUNT = { $size: { $ifNull: ["$milestones", []] } };
 
-const DAILY_MILESTONE_FIELDS = "officeId date dailyUpdate milestones photos documents createdBy createdAt updatedAt";
+const DAILY_MILESTONE_FIELDS =
+  "officeId date dailyUpdates dailyUpdate milestones photos documents createdBy createdAt updatedAt";
 const VISITOR_FIELDS =
   "officeId name purpose date timeArrived timeDeparted importance photos documents remarks createdBy createdAt updatedAt";
 
@@ -313,7 +314,16 @@ export async function getUserDashboard(user: CurrentUser): Promise<UserDashboard
       { $match: { officeId: officeObjectId, date: onOrBefore(today) } },
       { $sort: { date: -1 } },
       { $limit: RECENT_RECORDS_LIMIT },
-      { $project: { date: 1, title: "$dailyUpdate.title", milestoneCount: MILESTONE_COUNT } },
+      {
+        $project: {
+          date: 1,
+          // Legacy records store a single `dailyUpdate` object instead of a list.
+          title: {
+            $ifNull: [{ $arrayElemAt: ["$dailyUpdates.title", 0] }, "$dailyUpdate.title"],
+          },
+          milestoneCount: MILESTONE_COUNT,
+        },
+      },
     ]),
   ]);
 

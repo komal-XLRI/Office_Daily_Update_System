@@ -155,7 +155,9 @@ describe("reportToCsv", () => {
   it("writes visitors with IST times, blank departures and importance labels", () => {
     const start = rows.findIndex((row) => row[0] === "Visitors");
     expect(rows[start + 1]).toEqual(VISITOR_HEADERS);
-    const visitorRows = rows.slice(start + 2);
+    // The Attachments block follows the visitors, after one blank separator row.
+    const end = rows.findIndex((row) => row[0] === "Attachments");
+    const visitorRows = rows.slice(start + 2, end - 1);
     expect(visitorRows).toHaveLength(3 + 30);
     expect(visitorRows[0]).toEqual([
       "Dean (Administration)",
@@ -357,7 +359,7 @@ describe("reportToXlsx", () => {
     expect(attachments.actualRowCount).toBe(1 + 8);
 
     const photo = attachments.getRow(2);
-    expect(rowTexts(attachments, 2).slice(2, 5)).toEqual(["Daily Update", "Admissions review", "Photo"]);
+    expect(rowTexts(attachments, 2).slice(2, 5)).toEqual(["Daily Record", "Admissions review", "Photo"]);
     expect(photo.getCell(6).value).toEqual({
       text: "meeting-room.jpg",
       hyperlink:

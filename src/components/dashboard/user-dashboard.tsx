@@ -103,10 +103,14 @@ function TodayUpdateCard({ record, today }: { record: DailyMilestoneDTO | null; 
       <CardContent>
         {record ? (
           <div className="space-y-2">
-            <h3 className="font-medium break-words">{record.dailyUpdate.title}</h3>
-            <p className="line-clamp-6 break-words whitespace-pre-line text-muted-foreground">
-              {record.dailyUpdate.description}
-            </p>
+            {record.dailyUpdates.map((update, index) => (
+              <div key={`${index}-${update.title}`} className="space-y-1">
+                <h3 className="font-medium break-words">{update.title}</h3>
+                <p className="line-clamp-6 break-words whitespace-pre-line text-muted-foreground">
+                  {update.description}
+                </p>
+              </div>
+            ))}
             {record.createdBy || attachmentSummary.length > 0 ? (
               <p className="text-xs text-muted-foreground">
                 {[record.createdBy ? `Recorded by ${record.createdBy.name}` : null, ...attachmentSummary]

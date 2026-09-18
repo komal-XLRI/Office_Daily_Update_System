@@ -178,8 +178,9 @@ export interface DailyMilestoneFactoryInput {
   officeId: IdLike;
   /** Business date "YYYY-MM-DD" (default DEFAULT_TEST_DATE). */
   date?: string;
-  dailyUpdate?: Partial<IDailyUpdate>;
-  milestones?: IMilestone[];
+  dailyUpdates?: Partial<IDailyUpdate>[];
+  /** `photos` / `documents` default to empty lists. */
+  milestones?: (Partial<IMilestone> & Pick<IMilestone, "title">)[];
   photos?: IAttachment[];
   documents?: IAttachment[];
   /** Default: a fresh ObjectId (no user document is created). */
@@ -193,13 +194,21 @@ export async function createDailyMilestone(
   return DailyMilestone.create({
     officeId: toObjectId(input.officeId),
     date: businessDateToUtc(input.date ?? DEFAULT_TEST_DATE),
-    dailyUpdate: {
-      title: input.dailyUpdate?.title ?? `Daily update ${n}`,
-      description: input.dailyUpdate?.description ?? `Description of daily update ${n}`,
-    },
-    milestones: input.milestones ?? [
-      { title: `Milestone ${n}`, description: "Milestone description", remarks: "" },
-    ],
+    dailyUpdates: (input.dailyUpdates ?? [{}]).map((update, index) => ({
+      title: update.title ?? `Daily update ${n}${index > 0 ? ` (${index + 1})` : ""}`,
+      description: update.description ?? `Description of daily update ${n}`,
+      photos: update.photos ?? [],
+      documents: update.documents ?? [],
+    })),
+    milestones: (
+      input.milestones ?? [{ title: `Milestone ${n}`, description: "Milestone description" }]
+    ).map((item) => ({
+      title: item.title,
+      description: item.description ?? "",
+      remarks: item.remarks ?? "",
+      photos: item.photos ?? [],
+      documents: item.documents ?? [],
+    })),
     photos: input.photos ?? [],
     documents: input.documents ?? [],
     createdBy: input.createdBy ? toObjectId(input.createdBy) : new Types.ObjectId(),

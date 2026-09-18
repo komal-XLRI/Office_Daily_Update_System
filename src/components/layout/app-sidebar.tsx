@@ -8,7 +8,6 @@ import {
   FileTextIcon,
   LayoutDashboardIcon,
   LogOutIcon,
-  UserCheckIcon,
   UsersIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -41,13 +40,15 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   adminOnly?: boolean;
+  /** Extra route prefixes that keep this item highlighted (sections with more than one route). */
+  alsoMatches?: string[];
 }
 
 // Spec §25. Admin-only items are hidden for users; the pages and APIs also enforce this server-side.
 const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboardIcon },
-  { href: "/daily-updates", label: "Daily Updates", icon: ClipboardListIcon },
-  { href: "/visitors", label: "Visitors", icon: UserCheckIcon },
+  // Visitors are a view inside Daily Updates, so they share this entry instead of having their own.
+  { href: "/daily-updates", label: "Daily Updates", icon: ClipboardListIcon, alsoMatches: ["/visitors"] },
   { href: "/reports", label: "Reports", icon: FileTextIcon },
   { href: "/offices", label: "Offices", icon: Building2Icon, adminOnly: true },
   { href: "/users", label: "Users", icon: UsersIcon, adminOnly: true },
@@ -119,7 +120,9 @@ export function AppSidebar({ user }: { user: SidebarUser }) {
             <nav aria-label="Main">
               <SidebarMenu>
                 {items.map((item) => {
-                  const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  const active = [item.href, ...(item.alsoMatches ?? [])].some(
+                    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+                  );
                   return (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton asChild isActive={active} tooltip={item.label}>

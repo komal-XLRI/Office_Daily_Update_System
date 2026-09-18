@@ -70,7 +70,7 @@ const visitorInput = (overrides: Record<string, unknown> = {}) => ({
 
 const recordInput = (overrides: Record<string, unknown> = {}) => ({
   date: "2026-09-08",
-  dailyUpdate: { title: "Update", description: "Description" },
+  dailyUpdates: [{ title: "Update", description: "Description" }],
   milestones: [],
   photos: [],
   documents: [],
@@ -135,6 +135,88 @@ describe("visitors: cross-office attachment URLs", () => {
     await deleteVisitor(fx.userA, id);
     expect(deletedPublicIds()).toEqual([`${cloudinaryRootFolder()}/${folder(fx.officeA)}/photos/own`]);
     expect(deletedPublicIds().some((publicId) => publicId.includes(folder(fx.officeB)))).toBe(false);
+  });
+});
+
+describe("daily records: files attached to one update or milestone", () => {
+  it("rejects another office's file on a daily update or a milestone", async () => {
+    await expect(
+      createDailyMilestone(
+        fx.userA,
+        recordInput({
+          dailyUpdates: [
+            { title: "Update", description: "Description", photos: [photo("b-photo", fx.officeB)] },
+          ],
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    await expect(
+      createDailyMilestone(
+        fx.userA,
+        recordInput({
+          milestones: [
+            {
+              title: "Milestone",
+              description: "",
+              remarks: "",
+              documents: [documentFile("b-doc", fx.officeB)],
+            },
+          ],
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(await DailyMilestone.countDocuments()).toBe(0);
+  });
+
+  it("accepts the office's own files on updates and milestones, and deletes them with the record", async () => {
+    const created = await createDailyMilestone(
+      fx.userA,
+      recordInput({
+        dailyUpdates: [
+          { title: "Update", description: "Description", photos: [photo("update-photo", fx.officeA)] },
+        ],
+        milestones: [
+          {
+            title: "Milestone",
+            description: "",
+            remarks: "",
+            documents: [documentFile("milestone-doc", fx.officeA)],
+          },
+        ],
+        photos: [photo("day-photo", fx.officeA)],
+      }),
+    );
+
+    expect(created.dailyUpdates[0]?.photos).toEqual([photo("update-photo", fx.officeA)]);
+    expect(created.milestones[0]?.documents).toEqual([documentFile("milestone-doc", fx.officeA)]);
+
+    await deleteDailyMilestone(fx.admin, created.id);
+
+    const deleted = deletedPublicIds().map((id) => id.split("/").pop());
+    expect(deleted).toContain("day-photo");
+    expect(deleted).toContain("update-photo");
+    expect(deleted).toContain("milestone-doc.pdf");
+  });
+
+  it("deletes a file dropped from a milestone when the record is saved", async () => {
+    const milestone = (documents: unknown[]) => ({
+      title: "Milestone",
+      description: "",
+      remarks: "",
+      documents,
+    });
+    const created = await createDailyMilestone(
+      fx.userA,
+      recordInput({ milestones: [milestone([documentFile("dropped", fx.officeA)])] }),
+    );
+
+    await updateDailyMilestone(fx.userA, created.id, {
+      ...recordInput({ milestones: [milestone([])] }),
+      expectedUpdatedAt: created.updatedAt,
+    });
+
+    expect(deletedPublicIds().map((id) => id.split("/").pop())).toContain("dropped.pdf");
   });
 });
 

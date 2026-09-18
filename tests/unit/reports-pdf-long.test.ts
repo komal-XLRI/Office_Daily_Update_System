@@ -15,11 +15,13 @@ describe("renderReportPdf on long reports", () => {
     const dailyRecords: ReportDailyRecord[] = Array.from({ length: 31 }, (_, index) => ({
       id: `d${index}`,
       date: addDays("2026-08-01", index),
-      dailyUpdate: { title: `Update ${index + 1}`, description },
+      dailyUpdates: [{ title: `Update ${index + 1}`, description, photos: [], documents: [] }],
       milestones: Array.from({ length: 3 }, (__, m) => ({
         title: `Milestone ${m + 1}`,
         description,
         remarks: "On track",
+        photos: [],
+        documents: [],
       })),
       photos: [],
       documents: [],

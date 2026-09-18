@@ -55,10 +55,16 @@ export function DailyRecordsTable({ records, showOffice }: DailyRecordsTableProp
                   </TableCell>
                 ) : null}
                 <TableCell className="max-w-md min-w-64 whitespace-normal">
-                  <span className="block font-medium">{record.dailyUpdate.title}</span>
+                  <span className="block font-medium">{record.dailyUpdates[0]?.title ?? "—"}</span>
                   <span className="text-muted-foreground block">
-                    {truncate(record.dailyUpdate.description, 140)}
+                    {truncate(record.dailyUpdates[0]?.description ?? "", 140)}
                   </span>
+                  {record.dailyUpdates.length > 1 ? (
+                    <span className="text-muted-foreground block text-xs">
+                      +{record.dailyUpdates.length - 1} more update
+                      {record.dailyUpdates.length - 1 === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
                 </TableCell>
                 <TableCell className="text-center">
                   <Badge variant="secondary" className="tabular-nums">

@@ -6,7 +6,7 @@ import { APP_NAME } from "@/lib/constants";
 import { connectDB } from "@/lib/db/connect";
 import { NotFoundError } from "@/lib/errors";
 import { resolveReadOfficeScope } from "@/lib/permissions/scope";
-import { serializeAttachments, serializeMilestones } from "@/lib/serializers";
+import { serializeAttachments, serializeDailyUpdates, serializeMilestones } from "@/lib/serializers";
 import { businessDateRangeFilter, utcToBusinessDate } from "@/lib/utils/dates";
 import { reportQuerySchema, resolveReportRange } from "@/lib/validation/report";
 import { DailyMilestone } from "@/models/DailyMilestone";
@@ -14,7 +14,13 @@ import { Office } from "@/models/Office";
 import { Visitor } from "@/models/Visitor";
 import type { CurrentUser, Importance, OfficeRef } from "@/types";
 
-import { ALL_OFFICES_LABEL, REPORT_TYPE_LABELS, reportRangeLabel } from "./labels";
+import {
+  ALL_OFFICES_LABEL,
+  REPORT_TYPE_LABELS,
+  recordDocuments,
+  recordPhotos,
+  reportRangeLabel,
+} from "./labels";
 import type {
   ReportData,
   ReportDailyRecord,
@@ -33,6 +39,8 @@ interface LeanReportDailyMilestone {
   _id: Types.ObjectId;
   officeId: Types.ObjectId;
   date: Date;
+  dailyUpdates?: unknown;
+  /** Records written before daily updates became a list. */
   dailyUpdate?: { title?: string | null; description?: string | null } | null;
   milestones?: unknown;
   photos?: unknown;
@@ -53,17 +61,14 @@ interface LeanReportVisitor {
   documents?: unknown;
 }
 
-const DAILY_FIELDS = "officeId date dailyUpdate milestones photos documents";
+const DAILY_FIELDS = "officeId date dailyUpdates dailyUpdate milestones photos documents";
 const VISITOR_FIELDS = "officeId name purpose date timeArrived timeDeparted importance remarks photos documents";
 
 function toDailyRecord(doc: LeanReportDailyMilestone): ReportDailyRecord {
   return {
     id: String(doc._id),
     date: utcToBusinessDate(doc.date),
-    dailyUpdate: {
-      title: doc.dailyUpdate?.title ?? "",
-      description: doc.dailyUpdate?.description ?? "",
-    },
+    dailyUpdates: serializeDailyUpdates(doc),
     milestones: serializeMilestones(doc.milestones),
     photos: serializeAttachments(doc.photos),
     documents: serializeAttachments(doc.documents),
@@ -99,8 +104,8 @@ function sectionTotals(dailyRecords: ReportDailyRecord[], visitors: ReportVisito
   totals.visitors = visitors.length;
   for (const record of dailyRecords) {
     totals.milestones += record.milestones.length;
-    totals.photos += record.photos.length;
-    totals.documents += record.documents.length;
+    totals.photos += recordPhotos(record).length;
+    totals.documents += recordDocuments(record).length;
   }
   for (const visitor of visitors) {
     totals.photos += visitor.photos.length;

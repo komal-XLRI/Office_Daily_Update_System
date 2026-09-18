@@ -52,7 +52,7 @@ export default async function EditDailyUpdatePage({ params }: { params: Promise<
         officeName={officeName}
         defaultValues={{
           date: record.date,
-          dailyUpdate: record.dailyUpdate,
+          dailyUpdates: record.dailyUpdates,
           milestones: record.milestones,
           photos: record.photos,
           documents: record.documents,

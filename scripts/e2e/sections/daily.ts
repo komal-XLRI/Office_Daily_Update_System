@@ -25,7 +25,7 @@ export function dailyBody(
 ): Record<string, unknown> {
   return {
     date,
-    dailyUpdate: { title, description: `${title} - description of the day's work.` },
+    dailyUpdates: [{ title, description: `${title} - description of the day's work.` }],
     milestones: milestoneTitles.map((milestone) => ({
       title: milestone,
       description: `${milestone} details`,
@@ -146,7 +146,7 @@ export async function runDailySection(ctx: E2EContext): Promise<void> {
       dailyBody(DATE, `${titleA} (revised)`, [`Draft budget ${kw.milestone}`, "Circulate agenda", "Board approval"]),
     );
     const record = apiData<DailyMilestoneDTO>(response, 200);
-    assert(record.dailyUpdate.title === `${titleA} (revised)`, `title ${record.dailyUpdate.title}`);
+    assert(record.dailyUpdates[0]?.title === `${titleA} (revised)`, `title ${record.dailyUpdates[0]?.title}`);
     assert(record.milestones.length === 3 && record.officeId === A.id, `record ${response.describe()}`);
   });
 

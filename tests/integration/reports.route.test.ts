@@ -46,7 +46,7 @@ beforeEach(async () => {
   await createDailyMilestone({
     officeId: fixture.officeA._id,
     date: "2026-09-08",
-    dailyUpdate: { title: "Office A update", description: "Office A description" },
+    dailyUpdates: [{ title: "Office A update", description: "Office A description" }],
     milestones: [{ title: "Office A milestone", description: "Done", remarks: "=1+1" }],
     photos: [
       {
@@ -59,7 +59,7 @@ beforeEach(async () => {
   await createDailyMilestone({
     officeId: fixture.officeB._id,
     date: "2026-09-09",
-    dailyUpdate: { title: "Office B update", description: "Office B description" },
+    dailyUpdates: [{ title: "Office B update", description: "Office B description" }],
     milestones: [],
   });
   await createVisitor({ officeId: fixture.officeB._id, name: "Office B visitor", date: "2026-09-09", timeArrived: "11:00" });
@@ -122,7 +122,7 @@ describe("GET /api/reports", () => {
         generatedBy: "User A",
       });
       expect(body.data.sections).toHaveLength(1);
-      expect(body.data.sections[0]?.dailyRecords.map((record) => record.dailyUpdate.title)).toEqual(["Office A update"]);
+      expect(body.data.sections[0]?.dailyRecords.map((record) => record.dailyUpdates[0]?.title)).toEqual(["Office A update"]);
       expect(body.data.sections[0]?.visitors.map((visitor) => visitor.name)).toEqual(["Office A visitor"]);
       expect(JSON.stringify(body)).not.toContain("Office B");
     });

@@ -183,7 +183,7 @@ describe("visitorInputSchema", () => {
 describe("dailyMilestoneInputSchema", () => {
   const record = {
     date: "2026-09-08",
-    dailyUpdate: { title: "Admissions review", description: "Reviewed pending admissions." },
+    dailyUpdates: [{ title: "Admissions review", description: "Reviewed pending admissions." }],
     milestones: [{ title: "Shortlist published", description: "", remarks: "" }],
     photos: [],
     documents: [],
@@ -192,9 +192,11 @@ describe("dailyMilestoneInputSchema", () => {
   it("accepts a valid record and trims text", () => {
     const result = dailyMilestoneInputSchema.parse({
       ...record,
-      dailyUpdate: { title: "  Admissions review  ", description: " Reviewed. " },
+      dailyUpdates: [{ title: "  Admissions review  ", description: " Reviewed. " }],
     });
-    expect(result.dailyUpdate).toEqual({ title: "Admissions review", description: "Reviewed." });
+    expect(result.dailyUpdates).toEqual([
+      { title: "Admissions review", description: "Reviewed.", photos: [], documents: [] },
+    ]);
     expect(dailyMilestoneInputSchema.safeParse({ ...record, milestones: [] }).success).toBe(true);
   });
 
@@ -202,16 +204,19 @@ describe("dailyMilestoneInputSchema", () => {
     const result = dailyMilestoneInputSchema.safeParse({
       ...record,
       date: undefined,
-      dailyUpdate: { title: "   ", description: "" },
+      dailyUpdates: [{ title: "   ", description: "" }],
     });
     expect(fieldErrors(result)).toMatchObject({
-      "dailyUpdate.title": ["Daily update title is required"],
-      "dailyUpdate.description": ["Daily update description is required"],
+      "dailyUpdates.0.title": ["Daily update title is required"],
+      "dailyUpdates.0.description": ["Daily update description is required"],
     });
     expect(fieldErrors(result).date).toBeDefined();
     expect(
-      fieldErrors(dailyMilestoneInputSchema.safeParse({ ...record, dailyUpdate: undefined })),
-    ).toHaveProperty("dailyUpdate");
+      fieldErrors(dailyMilestoneInputSchema.safeParse({ ...record, dailyUpdates: undefined })),
+    ).toHaveProperty("dailyUpdates");
+    expect(
+      fieldErrors(dailyMilestoneInputSchema.safeParse({ ...record, dailyUpdates: [] })),
+    ).toMatchObject({ dailyUpdates: ["At least one daily update is required"] });
     expect(fieldErrors(dailyMilestoneInputSchema.safeParse({ ...record, date: "2026-9-8" }))).toEqual({
       date: ["Enter a valid date"],
     });
